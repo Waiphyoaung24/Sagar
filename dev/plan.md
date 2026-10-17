@@ -1,5 +1,17 @@
 # Plan.md — EPUB Translation Studio
 
+### Highlighted code Windows line endings — 2026-10-16
+
+Corrected the highlighted-code round-trip test to expect XML-normalized LF
+rather than raw fixture checkout line endings. The regression now exercises both
+LF and CRLF inputs on every platform, retaining exact markup and code indentation
+checks plus reload/Unicode checks. Production validation is unchanged; no milestone
+checkboxes advanced.
+
+Validation: Rust formatting and all three rich_text unit tests passed locally,
+including explicit CRLF coverage. Native Windows execution was not available.
+Next unfinished task: rerun the Rust suite in the Windows build.
+
 ### Shared language prompt test expectations — 2026-10-16
 
 Updated the existing prompt and custom HTTP transport tests to expect the shared

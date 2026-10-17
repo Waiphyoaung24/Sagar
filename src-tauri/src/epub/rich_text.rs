@@ -861,11 +861,17 @@ mod tests {
     use super::*;
     #[test]
     fn highlighted_code_round_trip() {
-        let input = include_str!("../../../tests/fixtures/editor/highlighted-code.xhtml").trim();
-        let (saved, text) = validate_document(input).expect("passive code metadata");
-        assert_eq!(saved, input);
-        assert!(text.contains("မြန်မာ"));
-        assert_eq!(validate_document(&saved).expect("reload").0, saved);
+        let input = include_str!("../../../tests/fixtures/editor/highlighted-code.xhtml")
+            .trim()
+            .replace("\r\n", "\n");
+        // XML normalizes CRLF to LF, including whitespace inside code blocks.
+        // Exercise both checkout styles on every platform.
+        for source in [input.clone(), input.replace('\n', "\r\n")] {
+            let (saved, text) = validate_document(&source).expect("passive code metadata");
+            assert_eq!(saved, input);
+            assert!(text.contains("မြန်မာ"));
+            assert_eq!(validate_document(&saved).expect("reload").0, saved);
+        }
         for invalid in [
             "<p data-highlighted=\"yes\">text</p>",
             "<p><code onclick=\"alert(1)\">text</code></p>",
