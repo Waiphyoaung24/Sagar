@@ -2,7 +2,7 @@
  * Native-speaker review is still required before claiming complete localization.
  */
 export const rki: Record<string, string> = {
-"Search languages…": "ဘာသာစကားတိ ရှာဖို့…",
+  "Search languages…": "ဘာသာစကားတိ ရှာဖို့…",
   "No matching languages": "ကိုက်ညီရေ ဘာသာစကား မဟိပါ",
   "Translation studio": "ဘာသာပြန် စတူဒီယို",
   Appearance: "အသွင်အပြင်",
@@ -356,8 +356,7 @@ export const rki: Record<string, string> = {
     "ဟိပြီးသားစာသားကို ထိန်းသိမ်းထားပါရေ။ ထပ်နီရေ လင့်ခ်ပစ်မှတ်တိကိုတော့ လက်မခံပါ။",
   "Resolve the draft’s save conflict before adding results.":
     "ရလဒ်တိ မထည့်ခင် မူကြမ်းသိမ်းဆည်းမှု ပဋိပက္ခကို ဖြေရှင်းပါ။",
-  "Approve sharing selected text to translate.":
-    "ဘာသာပြန်ဖို့ ရွေးထားရေ စာသားကို ပို့ခွင့်ပြုပါ။",
+  "Approve sharing selected text to translate.": "ဘာသာပြန်ဖို့ ရွေးထားရေ စာသားကို ပို့ခွင့်ပြုပါ။",
   results: "ရလဒ်တိ",
   "Insert block": "အပိုဒ် ထည့်ဖို့",
   "Slash commands": "Slash အမိန့်တိ",
@@ -375,7 +374,8 @@ export const rki: Record<string, string> = {
   "Additional guidance for this chapter…": "အေအခန်းအတွက် ထပ်ဆောင်း ညွှန်ကြားချက်တိ…",
   "Book instructions and this run's instructions are sent together. Changing these instructions restarts translation on Retry.":
     "စာအုပ်ညွှန်ကြားချက်တိနန့် အေအကြိမ်ရဲ့ ညွှန်ကြားချက်တိကို အတူပို့ပါရေ။ ယင်းညွှန်ကြားချက်တိကို ပြောင်းကေ ပြန်ကြိုးစားခါ ဘာသာပြန်မှုကို အစက ပြန်စပါဖို့။",
-  "I understand this chapter's text will be sent to": "အေအခန်းစာသားကို အောက်ပါနေရာဆီ ပို့ဖို့ဆိုစွာ နားလည်ပါရေ:",
+  "I understand this chapter's text will be sent to":
+    "အေအခန်းစာသားကို အောက်ပါနေရာဆီ ပို့ဖို့ဆိုစွာ နားလည်ပါရေ:",
   "to generate a proposal.": "ဘာသာပြန် အဆိုပြုချက် ဖန်တီးဖို့ ဖြစ်ပါရေ။",
   "Retry keeps complete sections whose formatting matches the source and translates the rest. An unfinished section starts again. If no complete section can be kept, the chapter starts again. A completed result is revalidated without translating again.":
     "ပြန်ကြိုးစားခါ မူရင်းနန့် စာသားပုံစံကိုက်ရေ ပြီးစီးပြီး အပိုင်းတိကို ဆက်ထားပြီး ကျန်အပိုင်းတိကို ဘာသာပြန်ပါရေ။ မပြီးသီးရေ အပိုင်းကို အစက ပြန်စပါရေ။ ပြီးစီးရေ အပိုင်းတစ်ခုလည်း မထိန်းထားနိုင်ကေ အခန်းအစက ပြန်စပါရေ။ ပြီးစီးရေ ရလဒ်ကို ဘာသာထပ်မပြန်ဘဲ ပြန်စစ်ဆေးပါရေ။",
@@ -419,8 +419,7 @@ export const rki: Record<string, string> = {
   "Applying replaces your current draft (kept as an unreviewed draft, never marked reviewed). Check the preview first.":
     "အသုံးပြုလိုက်ကေ လက်ဟိမူကြမ်းကို အစားထိုးပါဖို့။ စစ်ဆေးပြီးဟု မမှတ်ဘဲ မစစ်ဆေးရသီးရေ မူကြမ်းအဖြစ် ထားပါဖို့။ အရင် နမူနာကို ကြည့်ပါ။",
   "Draft export includes": "မူကြမ်းထုတ်ယူမှုမှာ ပါရေ အကြောင်းအရာတိ",
-  "reviewed translations and saved drafts":
-    "စစ်ဆေးပြီးရေ ဘာသာပြန်စာတိနန့် သိမ်းထားရေ မူကြမ်းတိ",
+  "reviewed translations and saved drafts": "စစ်ဆေးပြီးရေ ဘာသာပြန်စာတိနန့် သိမ်းထားရေ မူကြမ်းတိ",
   "Empty chapters and chapters marked “Keep original” retain the original content.":
     "အလွတ်အခန်းတိနန့် «မူရင်းအတိုင်း ထားဖို့» လို့ ရွေးထားရေ အခန်းတိမှာ မူရင်းစာသားကို ဆက်ထားပါရေ။",
   "Empty chapters and chapters marked “Keep original” are":
@@ -472,7 +471,8 @@ export const rki: Record<string, string> = {
   "items selected": "ခု ရွေးထားပြီး",
   items: "ခု",
   "Image · included locally": "ပုံ · အေကွန်ပျူတာမှာသာ ထားပါရေ",
-  "Original formatting is included for preservation.": "မူရင်းစာသားပုံစံကို ထိန်းသိမ်းနိုင်ဖို့ ယင်းပုံစံကိုပါ ပို့ပါရေ။",
+  "Original formatting is included for preservation.":
+    "မူရင်းစာသားပုံစံကို ထိန်းသိမ်းနိုင်ဖို့ ယင်းပုံစံကိုပါ ပို့ပါရေ။",
   Unknown: "မသိပါ",
   "Choose a language": "ဘာသာစကား ရွေးဖို့",
   "Other language…": "အခြားဘာသာစကား…",

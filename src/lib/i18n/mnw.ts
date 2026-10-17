@@ -115,8 +115,7 @@ export const mnw: Record<string, string> = {
   "Loading book settings…": "ပၠုပ်တၚ်စၟတ်လိက်အုပ်မံၚ်…",
   "Export cover": "ဗီုမုက်လိက်အုပ်သွက်ပတိတ်",
   "Custom export cover preview": "ဗီုနမူနာမုက်လိက်အုပ်မရုဲစှ်လဝ်",
-  "The original cover will be used, if the book has one.":
-    "လိက်အုပ်နွံမုက်လိက်အုပ်မ္ဂး စကာဗီုမူလရ။",
+  "The original cover will be used, if the book has one.": "လိက်အုပ်နွံမုက်လိက်အုပ်မ္ဂး စကာဗီုမူလရ။",
   "Choose custom cover": "ရုဲမုက်လိက်အုပ် မိက်ဂွံစကာ",
   "Reading cover…": "ဗှ်ဗီုမုက်လိက်အုပ်မံၚ်…",
   "Use original cover": "စကာမုက်လိက်အုပ်မူလ",
@@ -292,8 +291,7 @@ export const mnw: Record<string, string> = {
   "The original text contains inline formatting or links. Check formatting, links and images when replacing this content; “Keep original” preserves the source fully.":
     "လိက်မူလနွံဗီုပြၚ်ပ္ဍဲဝါကျ ဟွံသေၚ်မ္ဂး လင့်ခ်ဂမၠိုၚ်။ အခိၚ်ပလေဝ်အစား စၟဳစၟတ်ဗီုပြၚ်လိက်၊ လင့်ခ်ကေုာံဗီုရုပ်ညိ။ “စွံအတိုၚ်မူလ” ဂှ် ထိၚ်လဝ်မူလသီုဖအိုတ်။",
   "Check original formatting": "စၟဳစၟတ်ဗီုပြၚ်လိက်မူလ",
-  "Keep the original text for this block in the exported book":
-    "စွံလိက်မူလသွက်ပိုဒ်ဏအ်ပ္ဍဲလိက်အုပ်မပတိတ်",
+  "Keep the original text for this block in the exported book": "စွံလိက်မူလသွက်ပိုဒ်ဏအ်ပ္ဍဲလိက်အုပ်မပတိတ်",
   "A newer saved version of this block exists. Your draft is kept above.":
     "မူတၟိ မစွံလဝ်သွက်ပိုဒ်ဏအ် နွံရ။ မူပထမမၞး စွံလဝ်ပ္ဍဲလတူ။",
   "I understand selected text and neighboring context will be sent to the chosen provider. Image bytes are never sent.":
@@ -302,8 +300,7 @@ export const mnw: Record<string, string> = {
   "saved runs": "အကြိမ်မစွံလဝ်",
   "Saved proposals and runs": "တၚ်အဆိုပြုကေုာံအကြိမ် မစွံလဝ်",
   Run: "အကြိမ်",
-  "Resume and Retry use this saved configuration.":
-    "ဆက်ကၠောန်ကေုာံစမ်ထပ် စကာတၚ်စၟတ် မစွံလဝ်ဏအ်။",
+  "Resume and Retry use this saved configuration.": "ဆက်ကၠောန်ကေုာံစမ်ထပ် စကာတၚ်စၟတ် မစွံလဝ်ဏအ်။",
   "Confirm deleting saved proposals": "အတည်ပြုပွမပလီု တၚ်အဆိုပြု မစွံလဝ်",
   "Delete this run and all its saved proposals? This cannot be undone. Text already added to your draft and insertion history will stay.":
     "ပလီုအကြိမ်ဏအ် ကေုာံတၚ်အဆိုပြု မစွံလဝ်သီုဖအိုတ်ဟာ? ကလေၚ်ဂွံဟွံမာန်။ လိက်မစုတ်လဝ်ပ္ဍဲမူပထမကေုာံမှတ်တမ်းပွမစုတ်လိက် သှ်ေဒၟံၚ်ရ။",
@@ -356,8 +353,7 @@ export const mnw: Record<string, string> = {
     "လိက်မချူလဝ် ထိၚ်လဝ်ရ၊ တၚ်လင့်ခ်မတုပ်ညးသ္ကံ ဟွံဒုၚ်တဲဏီ။",
   "Resolve the draft’s save conflict before adding results.":
     "သောင်ကလးပဋိပက္ခပွမစွံမူပထမ ကိုပ်ကၠာနူစုတ်ရလဒ်။",
-  "Approve sharing selected text to translate.":
-    "ကဵုအခေါၚ်ဗလးလိက်မရုဲ သွက်ကၠာဲဘာသာ။",
+  "Approve sharing selected text to translate.": "ကဵုအခေါၚ်ဗလးလိက်မရုဲ သွက်ကၠာဲဘာသာ။",
   results: "ရလဒ်ဂမၠိုၚ်",
   "Insert block": "စုတ်ပိုဒ်",
   "Slash commands": "အမိၚ် Slash",
@@ -409,8 +405,7 @@ export const mnw: Record<string, string> = {
   "Fix with AI?": "ပလေဝ်နကဵု AI ဟာ?",
   "Your current Translation HTML is sent to the tool, which restructures it into rich-text-compatible XHTML without translating. Your code is kept until you press Apply, and the source book is never modified.":
     "HTML လိက်ကၠာဲဘာသာလၟုဟ် ဒးဗလးကုကရိယာ သွက်ကလေၚ်စဳရေၚ်နဒဒှ် XHTML မပလေဝ်နကဵု rich text ဂွံ၊ ဟွံကၠာဲဘာသာ။ ကုဒ်မၞး ထိၚ်လဝ်စဵုကဵုဍဵု Apply၊ လိက်အုပ်မူလ ဟွံပြံၚ်လှာဲ။",
-  "I understand my current draft HTML will be sent to":
-    "အဲတီကေတ်ရ HTML မူပထမလၟုဟ် ဒးဗလးကု",
+  "I understand my current draft HTML will be sent to": "အဲတီကေတ်ရ HTML မူပထမလၟုဟ် ဒးဗလးကု",
   "to repair its structure.": "သွက်ပလေဝ်လဒက်ပ္တန်ဍေံ။",
   "Repairing… (": "ပလေဝ်မံၚ်… (",
   "Live repair output": "ရလဒ်ပလေဝ်လၟုဟ်",
@@ -419,17 +414,13 @@ export const mnw: Record<string, string> = {
   "Applying replaces your current draft (kept as an unreviewed draft, never marked reviewed). Check the preview first.":
     "ယဝ်စကာမ္ဂး အစားမူပထမလၟုဟ် (စွံဒဒှ်မူပထမ ဟွံစၟဳစၟတ်ဏီ၊ ဟွံစၟတ်ဒဒှ်စၟဳစၟတ်တုဲ)။ စၟဳစၟတ်ဗီုနမူနာကိုပ်ကၠာညိ။",
   "Draft export includes": "ပ္ဍဲ EPUB မူပထမ မပါဂှ်",
-  "reviewed translations and saved drafts":
-    "လိက်ကၠာဲဘာသာမစၟဳစၟတ်တုဲ ကေုာံမူပထမမစွံလဝ်",
+  "reviewed translations and saved drafts": "လိက်ကၠာဲဘာသာမစၟဳစၟတ်တုဲ ကေုာံမူပထမမစွံလဝ်",
   "Empty chapters and chapters marked “Keep original” retain the original content.":
     "အခန်ဗလာကေုာံအခန်မစၟတ် “စွံအတိုၚ်မူလ” တအ် စွံလိက်မူလ။",
-  "Empty chapters and chapters marked “Keep original” are":
-    "အခန်ဗလာကေုာံအခန်မစၟတ် “စွံအတိုၚ်မူလ” တအ်",
+  "Empty chapters and chapters marked “Keep original” are": "အခန်ဗလာကေုာံအခန်မစၟတ် “စွံအတိုၚ်မူလ” တအ်",
   omitted: "ပတိတ်လဝ်",
-  "— the draft contains only translated chapters.":
-    "— မူပထမပါအခန် မကၠာဲဘာသာတုဲဟေၚ်။",
-  "Include original content for untranslated chapters.":
-    "ထပ်စုတ်လိက်မူလ သွက်အခန်ဟွံကၠာဲဘာသာဏီ။",
+  "— the draft contains only translated chapters.": "— မူပထမပါအခန် မကၠာဲဘာသာတုဲဟေၚ်။",
+  "Include original content for untranslated chapters.": "ထပ်စုတ်လိက်မူလ သွက်အခန်ဟွံကၠာဲဘာသာဏီ။",
   reviewed: "စၟဳစၟတ်တုဲ",
   "keep original": "စွံအတိုၚ်မူလ",
   draft: "မူပထမ",

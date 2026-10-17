@@ -356,8 +356,7 @@ export const shn: Record<string, string> = {
     "လိၵ်ႈဢၼ်မီးဝႆႉတေၵဵပ်းဝႆႉ၊ သင်ဝႃႈ anchor သမ်ႉၵၼ် တေဢမ်ႇႁပ်ႉ။",
   "Resolve the draft’s save conflict before adding results.":
     "ၵႄႈလိတ်ႈလွင်ႈၶတ်းၵၼ်ၵၢၼ်သိမ်းလိၵ်ႈၶၢမ်း ဢွၼ်တၢင်းတေသႂ်ႇၶေႃႈတွပ်ႇ။",
-  "Approve sharing selected text to translate.":
-    "ယိုၼ်ယၼ်တႃႇသူင်ႇလိၵ်ႈဢၼ်လိူၵ်ႈ ႁႂ်ႈပိၼ်ႇၽႃႇသႃႇ။",
+  "Approve sharing selected text to translate.": "ယိုၼ်ယၼ်တႃႇသူင်ႇလိၵ်ႈဢၼ်လိူၵ်ႈ ႁႂ်ႈပိၼ်ႇၽႃႇသႃႇ။",
   results: "ၶေႃႈတွပ်ႇ",
   "Insert block": "သႂ်ႇတွၼ်ႈလိၵ်ႈ",
   "Slash commands": "ၶေႃႈသင်ႇ Slash",
@@ -419,8 +418,7 @@ export const shn: Record<string, string> = {
   "Applying replaces your current draft (kept as an unreviewed draft, never marked reviewed). Check the preview first.":
     "ပေႃးၸႂ်ႉ တေတႅၼ်းတီႈလိၵ်ႈၶၢမ်းယၢမ်းလဵဝ် (ယင်းပဵၼ်လိၵ်ႈၶၢမ်းဢမ်ႇပႆႇထတ်း၊ ဢမ်ႇမၢႆဝႃႈထတ်းယဝ်ႉ)။ ႁႂ်ႈထတ်းတူဝ်ယၢင်ႇဢွၼ်တၢင်း။",
   "Draft export includes": "ၾၢႆႇလိၵ်ႈၶၢမ်းဢၼ်သူင်ႇဢွၵ်ႇ ပႃးဝႆႉ",
-  "reviewed translations and saved drafts":
-    "လိၵ်ႈပိၼ်ႇဢၼ်ထတ်းယဝ်ႉလႄႈ လိၵ်ႈၶၢမ်းဢၼ်သိမ်းဝႆႉ",
+  "reviewed translations and saved drafts": "လိၵ်ႈပိၼ်ႇဢၼ်ထတ်းယဝ်ႉလႄႈ လိၵ်ႈၶၢမ်းဢၼ်သိမ်းဝႆႉ",
   "Empty chapters and chapters marked “Keep original” retain the original content.":
     "တွၼ်ႈလိၵ်ႈပဝ်ႇလႄႈတွၼ်ႈဢၼ်မၢႆ “ၵဵပ်းဝႆႉလိၵ်ႈငဝ်ႈ” တေၵဵပ်းလိၵ်ႈငဝ်ႈဝႆႉ။",
   "Empty chapters and chapters marked “Keep original” are":
