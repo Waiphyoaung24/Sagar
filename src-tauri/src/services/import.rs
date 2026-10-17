@@ -38,6 +38,9 @@ pub fn import_epub_with_app_language(
         "ja" => "ja",
         "ko" => "ko",
         "th" => "th",
+        "shn" => "shn",
+        "rki" => "rki",
+        "mnw" => "mnw",
         _ => "my",
     };
     let metadata = std::fs::metadata(source_path)?;

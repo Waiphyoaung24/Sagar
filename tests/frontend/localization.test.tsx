@@ -78,7 +78,7 @@ test("Appearance changes language immediately, preserves controls and restores i
       'select[aria-describedby="app-language-help"]',
     )!;
     expect(select.value).toBe("en");
-    expect(select.options.length).toBe(6);
+    expect(select.options.length).toBe(9);
     select.focus();
     await act(async () => {
       select.value = "my";
@@ -98,7 +98,7 @@ test("Appearance changes language immediately, preserves controls and restores i
     await act(async () => root.unmount());
     root = createRoot(container);
     await act(async () => render());
-    const restored = container.querySelector<HTMLSelectElement>(
+    let restored = container.querySelector<HTMLSelectElement>(
       'select[aria-describedby="app-language-help"]',
     )!;
     expect(restored.value).toBe("my");
@@ -116,11 +116,39 @@ test("Appearance changes language immediately, preserves controls and restores i
     expect(container.textContent).toContain("外观");
     expect(loadAppLanguage()).toBe("zh");
     expect(document.documentElement.lang).toBe("zh-Hans");
+    for (const language of ["shn", "rki", "mnw"] as const) {
+      restored.focus();
+      await act(async () => {
+        restored.value = language;
+        restored.dispatchEvent(new window.Event("change", { bubbles: true }));
+      });
+      expect(document.documentElement.lang).toBe(language);
+      expect(loadAppLanguage()).toBe(language);
+      expect(container.textContent).toContain(translate(language, "Appearance"));
+      expect(document.activeElement).toBe(restored);
+      await act(async () => root.unmount());
+      root = createRoot(container);
+      await act(async () => render());
+      expect(container.querySelector<HTMLSelectElement>('select[aria-describedby="app-language-help"]')?.value).toBe(language);
+      // The remount creates a new select for the next language change.
+      restored = container.querySelector<HTMLSelectElement>('select[aria-describedby="app-language-help"]')!;
+    }
+
     expect(container.querySelector('.appearance-preview [lang="en"]')?.textContent).toBe(
       "The next chapter begins here.",
     );
   } finally {
     await act(async () => root.unmount());
     container.remove();
+  }
+});
+
+ test("Shan, Arakanese and Mon preferences and core catalogs are distinct", () => {
+  setup();
+  for (const language of ["shn", "rki", "mnw"] as const) {
+    saveAppLanguage(language);
+    expect(loadAppLanguage()).toBe(language);
+    expect(translate(language, "Language")).not.toBe("Language");
+    expect(translate(language, "Unknown message")).toBe("Unknown message");
   }
 });

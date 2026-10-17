@@ -8,7 +8,7 @@ const project: ProjectSummary = {
   id: "language-test",
   title: "Sample",
   author: null,
-  sourceLanguage: "en-GB",
+  sourceLanguage: "shn",
   targetLanguage: "x-local",
   reviewedBlocks: 0,
   totalBlocks: 0,
@@ -65,31 +65,47 @@ test("named choices preserve custom tags and unknown sources through save retry"
         }),
       ),
     );
-    const source = container.querySelector<HTMLSelectElement>("#language-source");
-    const target = container.querySelector<HTMLSelectElement>("#language-target");
+    const source = container.querySelector<HTMLInputElement>("#language-source");
+    const target = container.querySelector<HTMLInputElement>("#language-target");
     if (!source || !target) throw new Error("Language choices missing");
-    expect(source.selectedOptions[0].textContent).toContain("English");
-    expect(target.value).toBe("custom");
-    expect(container.querySelector("input")?.value).toBe("x-local");
+    expect(source.value).toContain("ရှမ်း");
+    await act(async () => source.focus());
+    expect(container.querySelector('[id="language-source-option-shn"]')).not.toBeNull();
+    expect(container.querySelector('[id="language-source-option-shn-Mymr-MM"]')).toBeNull();
     await act(async () => {
-      source.value = "";
-      source.dispatchEvent(new window.Event("change", { bubbles: true }));
+      container.querySelector<HTMLButtonElement>('[id="language-source-option-unknown"]')?.click();
     });
-    await act(async () => {
-      target.value = "ja";
-      target.dispatchEvent(new window.Event("change", { bubbles: true }));
-    });
-    expect(container.querySelector("input")).toBeNull();
+    await act(async () => target.focus());
+    for (const code of ["my", "rki", "mnw", "shn", "ksw", "kjp", "pwo", "blk", "kyu", "csh", "kht", "tle", "pll", "pce", "rbb", "aio", "phk", "tvn", "int"]) {
+      expect(container.querySelector(`[id="language-target-option-${code}"]`)).toBeNull();
+      expect(container.querySelector(`[id="language-target-option-${code}-Mymr-MM"]`)).not.toBeNull();
+    }
+    // Simulate input through React's handler, as happy-dom is loaded after React DOM.
+    const propsKey = Object.keys(target).find((key) => key.startsWith("__reactProps"));
+    if (!propsKey) throw new Error("Input handler missing");
+    const inputProps = (target as unknown as Record<string, { onChange: (event: { target: { value: string } }) => void }>)[propsKey];
+    for (const query of ["Rakhine", "ရခိုင်", "rki-Mymr-MM"]) {
+      await act(async () => inputProps.onChange({ target: { value: query } }));
+      expect(container.querySelectorAll('[role="option"]').length).toBe(1);
+      expect(container.querySelector('[role="option"]')?.textContent).toContain("ရခိုင်");
+    }
+    await act(async () => target.dispatchEvent(new window.KeyboardEvent("keydown", { key: "Escape", bubbles: true })));
+    expect(closes).toBe(0);
+    expect(target.getAttribute("aria-expanded")).toBe("false");
+    await act(async () => target.click());
+    await act(async () => inputProps.onChange({ target: { value: "rki" } }));
+    await act(async () => target.dispatchEvent(new window.KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true })));
+    expect(container.querySelector('input[aria-label$="Language tag"]')).toBeNull();
     const submit = () =>
       container
         .querySelector("form")
         ?.dispatchEvent(new window.Event("submit", { bubbles: true, cancelable: true }));
     await act(async () => submit());
-    expect(saves[0]).toMatchObject({ sourceLanguage: "", targetLanguage: "ja" });
+    expect(saves[0]).toMatchObject({ sourceLanguage: "", targetLanguage: "rki-Mymr-MM" });
     expect(container.querySelector('[role="alert"]')?.textContent).toContain(
       "Try again.",
     );
-    expect(target.value).toBe("ja");
+    expect(target.value).toContain("rki-Mymr-MM");
     expect(closes).toBe(0);
     await act(async () => submit());
     expect(saves[1]).toEqual(saves[0]);

@@ -1870,3 +1870,84 @@ and unchanged source/snapshot bytes. Native picker/import interaction and
 Windows/Linux were not exercised. Next unfinished task: verify changing app
 language then importing in rebuilt native Sagar. No milestone checkboxes advanced.
 The existing bundle-size warning remains.
+
+### Myanmar ethnic language choices — 2026-10-16
+
+Expanded the shared language names with all 19 requested languages and Myanmar
+labels where supplied. Translation-language choices include both primary codes
+and explicit Myanmar-script Myanmar-region locales (`rki-Mymr-MM`, etc.).
+Existing saved tags remain unchanged; display lookup recognizes full locales
+through their primary language. This continues language-dialog compatibility
+polish; no milestone checkboxes advanced.
+
+Validation: `bun run check` passed (existing bundle-size warning). The language
+dialog regression passed with 88 assertions covering all primary/locale choices
+in both fields, a Myanmar label, exact locale submission, save-error retention,
+retry and focus restoration. Rust code and EPUB processing were unchanged;
+Rust tests were not rerun. Native rendering, theme/minimum-window checks and
+Windows/Linux remain unverified. Next unfinished task: verify the expanded
+native language picker and Myanmar glyph rendering in rebuilt Sagar.
+
+### Shan and Arakanese app language choices — 2026-10-16
+
+Added Myanmar (Shan), `shn`, and Myanmar (Arakanese), `rki`, to Settings →
+Appearance. Both preferences apply immediately, restore after restart, set the
+interface language tag, and initialize the matching translation target on new
+imports. Existing projects retain their saved languages. Added separate core
+interface catalogs with English fallback; these are partial translations and
+require native-speaker review. Continues the existing localization compatibility
+work; no milestone checkboxes advanced.
+
+Validation: `bun run check` passed with the existing bundle-size warning; five
+frontend tests passed (57 assertions), including selection, focus retention,
+remount persistence and import command forwarding. `cargo fmt --check` and the
+focused import persistence regression passed. Native rendered layout, light/dark
+appearance, glyph shaping, minimum window size and Windows/Linux behavior were
+not visually verified. Next unfinished task: native-speaker review and completion
+of both catalogs, followed by native UI/glyph verification.
+
+### Remove duplicate language choices — 2026-10-16
+
+The picker now offers one full Myanmar-script locale per requested language.
+When a project already stores a short code, that field substitutes its saved
+code for the equivalent locale choice, preserving metadata without duplicates.
+No milestone checkboxes advanced. `bun run check` and the language-dialog
+regression passed (70 assertions), including absence of duplicate short codes,
+preservation of saved Shan, and locale save/retry. Existing bundle-size warning
+remains. Native rendering and cross-platform checks were not run. Next unfinished
+task: verify the corrected picker in rebuilt native Sagar.
+
+### Searchable translation language picker — 2026-10-16
+
+Replaced the workspace language selects with searchable comboboxes using existing
+picker styles. Search matches English/Myanmar names and locale codes, with
+Unicode normalization. Arrow keys and Enter select; Escape dismisses the list
+before the dialog; blur restores the saved selection without changing metadata.
+Unknown source, custom tags, saved short-code deduplication and save/retry remain.
+Search and empty-state labels are localized in the five existing base catalogs.
+
+Validation: `bun run check` and the language-dialog regression passed (57
+assertions), covering all requested locale choices, English/Myanmar/code search,
+keyboard selection/Escape, persisted short codes, save errors and focus restoration.
+Existing bundle-size warning remains. No running Sagar build was available in
+the UI inventory; native visual, light/dark, minimum-size, IME and cross-platform
+checks remain unverified. Rust and EPUB processing were unchanged and Rust tests
+were not rerun. Next unfinished task: inspect and exercise the searchable picker
+in rebuilt native Sagar. No milestone checkboxes advanced.
+
+### Mon app language choice — 2026-10-16
+
+Added Myanmar (Mon), `mnw`, under Settings → Appearance, with a separate partial
+core interface catalog and English fallback for untranslated messages. Selection
+applies immediately and restores on remount; new imports default their target to
+Mon. Existing book language choices already include Mon and remain unchanged.
+Continues localization compatibility work; no milestone checkboxes advanced.
+
+Validation: five frontend tests passed (66 assertions), including Mon selection,
+focus retention, remount persistence, fallback and import forwarding. Build,
+changed-source Biome checks, Rust formatting and the focused import persistence
+regression passed. Full `bun run check` stops on existing formatting differences
+in the Shan/Arakanese catalogs; build separately passed with the existing bundle
+size warning. Native UI, light/dark, minimum-size layout, Mon glyph rendering and
+Windows/Linux behavior were not verified. Next unfinished task: native-speaker
+review and completion of the Mon catalog, then native visual verification.

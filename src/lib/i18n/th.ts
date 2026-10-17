@@ -1,5 +1,7 @@
 /** Thai interface strings. Untranslated messages fall back to English. */
 export const th: Record<string, string> = {
+  "Search languages…": "ค้นหาภาษา…",
+  "No matching languages": "ไม่มีภาษาที่ตรงกัน",
   "Translation studio": "สตูดิโอแปลภาษา",
   Appearance: "ลักษณะที่ปรากฏ",
   "Changes apply immediately and are saved on this computer.":

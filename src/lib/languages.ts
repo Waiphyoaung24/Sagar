@@ -34,9 +34,35 @@ export function formatDirection(
   return `${side(source)} → ${side(target)}`;
 }
 
+// One explicit Myanmar-script locale per language in the picker.
+const MYANMAR_SCRIPT_LANGUAGES = [
+  "my",
+  "rki",
+  "mnw",
+  "shn",
+  "ksw",
+  "kjp",
+  "pwo",
+  "blk",
+  "kyu",
+  "csh",
+  "kht",
+  "tle",
+  "pll",
+  "pce",
+  "rbb",
+  "aio",
+  "phk",
+  "tvn",
+  "int",
+];
+
 /** Sorted suggestions for the language fields (`value` + readable label). */
 export function languageSuggestions(): { value: string; label: string }[] {
   return Object.entries(NAMES)
-    .map(([value, name]) => ({ value, label: `${name} (${value})` }))
+    .map(([code, name]) => {
+      const value = MYANMAR_SCRIPT_LANGUAGES.includes(code) ? `${code}-Mymr-MM` : code;
+      return { value, label: `${name} (${value})` };
+    })
     .sort((a, b) => a.label.localeCompare(b.label));
 }

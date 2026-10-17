@@ -1,5 +1,7 @@
 /** Korean interface strings. Untranslated messages fall back to English. */
 export const ko: Record<string, string> = {
+  "Search languages…": "언어 검색…",
+  "No matching languages": "일치하는 언어가 없습니다",
   "Translation studio": "번역 스튜디오",
   Appearance: "모양",
   "Changes apply immediately and are saved on this computer.":

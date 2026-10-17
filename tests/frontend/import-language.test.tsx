@@ -55,7 +55,7 @@ test("new imports receive the current app language after settings changes", asyn
     await act(async () =>
       root.render(createElement(LanguageProvider, null, createElement(Harness))),
     );
-    for (const language of ["en", "my", "th", "zh", "ja", "ko"] as const) {
+    for (const language of ["en", "my", "th", "zh", "ja", "ko", "shn", "rki", "mnw"] as const) {
       await act(async () => chooseLanguage(language));
       const button = container.querySelector<HTMLButtonElement>("[data-open-epub]");
       if (!button) throw new Error("Import action missing");

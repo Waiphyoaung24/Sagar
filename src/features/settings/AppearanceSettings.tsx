@@ -35,6 +35,9 @@ export function AppearanceSettings({
             onChange={(event) => {
               const next = event.target.value;
               if (
+                next === "mnw" ||
+                next === "shn" ||
+                next === "rki" ||
                 next === "en" ||
                 next === "my" ||
                 next === "zh" ||
@@ -50,6 +53,15 @@ export function AppearanceSettings({
             </option>
             <option value="my" lang="my">
               မြန်မာ (Myanmar)
+            </option>
+            <option value="mnw" lang="mnw">
+              Myanmar (Mon) · မန်
+            </option>
+            <option value="shn" lang="shn">
+              Myanmar (Shan) · တႆး
+            </option>
+            <option value="rki" lang="rki">
+              Myanmar (Arakanese) · ရခိုင်
             </option>
             <option value="zh" lang="zh-Hans">
               中文（简体）

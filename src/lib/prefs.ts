@@ -3,7 +3,7 @@
  * separately from translations and never authoritative content.
  */
 
-export type AppLanguage = "en" | "my" | "zh" | "ja" | "ko" | "th";
+export type AppLanguage = "en" | "my" | "zh" | "ja" | "ko" | "th" | "shn" | "rki" | "mnw";
 
 export type ThemePreference = "system" | "light" | "dark";
 
@@ -84,7 +84,10 @@ export function saveScrollSync(enabled: boolean): void {
 
 export function loadAppLanguage(): AppLanguage {
   const value = read(KEYS.language);
-  return value === "my" ||
+  return value === "mnw" ||
+    value === "shn" ||
+    value === "rki" ||
+    value === "my" ||
     value === "zh" ||
     value === "ja" ||
     value === "ko" ||

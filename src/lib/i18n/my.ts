@@ -1,5 +1,7 @@
 /** Interface translations only. Book content is never passed through this catalog. */
 export const my: Record<string, string> = {
+  "Search languages…": "ဘာသာစကား ရှာရန်…",
+  "No matching languages": "ကိုက်ညီသော ဘာသာစကား မရှိပါ",
   "Translation studio": "ဘာသာပြန် စတူဒီယို",
   Appearance: "အသွင်အပြင်",
   "Changes apply immediately and are saved on this computer.":

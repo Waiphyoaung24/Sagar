@@ -1,5 +1,7 @@
 /** Simplified Chinese interface strings. Untranslated messages fall back to English. */
 export const zh: Record<string, string> = {
+  "Search languages…": "搜索语言…",
+  "No matching languages": "没有匹配的语言",
   "Translation studio": "翻译工作室",
   Appearance: "外观",
   "Changes apply immediately and are saved on this computer.":

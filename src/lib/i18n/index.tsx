@@ -2,23 +2,32 @@ import { createContext, type ReactNode, useContext, useEffect, useState } from "
 import { type AppLanguage, loadAppLanguage, saveAppLanguage } from "../prefs";
 import { ja } from "./ja";
 import { ko } from "./ko";
+import { mnw } from "./mnw";
 import { my } from "./my";
+import { rki } from "./rki";
+import { shn } from "./shn";
 import { th } from "./th";
 import { zh } from "./zh";
 
 export function translate(language: AppLanguage, message: string): string {
   const catalog =
-    language === "my"
-      ? my
-      : language === "zh"
-        ? zh
-        : language === "ja"
-          ? ja
-          : language === "ko"
-            ? ko
-            : language === "th"
-              ? th
-              : null;
+    language === "mnw"
+      ? mnw
+      : language === "shn"
+        ? shn
+        : language === "rki"
+          ? rki
+          : language === "my"
+            ? my
+            : language === "zh"
+              ? zh
+              : language === "ja"
+                ? ja
+                : language === "ko"
+                  ? ko
+                  : language === "th"
+                    ? th
+                    : null;
   return catalog && typeof catalog[message] === "string" ? catalog[message] : message;
 }
 
@@ -34,6 +43,9 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
   }, [language]);
   function setLanguage(next: AppLanguage) {
     if (
+      next !== "mnw" &&
+      next !== "shn" &&
+      next !== "rki" &&
       next !== "en" &&
       next !== "my" &&
       next !== "zh" &&

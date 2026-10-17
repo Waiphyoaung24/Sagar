@@ -1,5 +1,7 @@
 /** Japanese interface strings. Untranslated messages fall back to English. */
 export const ja: Record<string, string> = {
+  "Search languages…": "言語を検索…",
+  "No matching languages": "一致する言語はありません",
   "Translation studio": "翻訳スタジオ",
   Appearance: "外観",
   "Changes apply immediately and are saved on this computer.":
