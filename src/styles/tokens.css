@@ -13,7 +13,8 @@
   --space-8: 32px;
 
   /* Typography */
-  --font-ui:
+  --font-ui: var(--font-ui-default);
+  --font-ui-default:
     system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, Padauk,
     "Myanmar Text", "Noto Sans Myanmar", sans-serif;
   /* Myanmar-capable fallbacks for book/editor content */

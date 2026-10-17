@@ -1983,11 +1983,11 @@ mod tests {
     #[test]
     fn prompt_direction_uses_configured_languages_and_shared_names() {
         for (source, target, from, to) in [
-            ("en", "my", "English (en)", "Myanmar (my)"),
-            ("my", "en", "Myanmar (my)", "English (en)"),
+            ("en", "my", "English (en)", "Myanmar · မြန်မာ (my)"),
+            ("my", "en", "Myanmar · မြန်မာ (my)", "English (en)"),
             ("fr", "ja", "French (fr)", "Japanese (ja)"),
             ("de-DE", "FR-ca", "German (de-DE)", "French (FR-ca)"),
-            ("shn", "mnw", "Shan (shn)", "Mon (mnw)"),
+            ("shn", "mnw", "Shan · ရှမ်း (shn)", "Mon · မွန် (mnw)"),
             ("zz-test", "xy", "zz-test", "xy"),
         ] {
             let prompt = build_translation_prompt(Some(source), target, "<p>Story</p>");
@@ -2010,7 +2010,7 @@ mod tests {
     fn prompt_carries_html_and_structure_rules() {
         let body = "<h1>Title</h1><p>First <img src=\"images/a.png\"/></p>";
         let prompt = build_translation_prompt(Some("en"), "my", body);
-        assert!(prompt.contains("Myanmar (my)"), "{prompt}");
+        assert!(prompt.contains("Myanmar · မြန်မာ (my)"), "{prompt}");
         assert!(prompt.contains("from English (en)"), "{prompt}");
         assert!(prompt.contains(body), "{prompt}");
         assert!(prompt.contains("Keep every tag"), "{prompt}");

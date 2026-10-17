@@ -99,3 +99,26 @@ export function loadAppLanguage(): AppLanguage {
 export function saveAppLanguage(language: AppLanguage): void {
   write(KEYS.language, language);
 }
+
+export type FontRole = "ui" | "translation";
+export type FontPreferences = Record<FontRole, string>;
+
+export function loadFonts(): FontPreferences {
+  return {
+    ui: read("sagar.font.ui") ?? "",
+    translation: read("sagar.font.translation") ?? "",
+  };
+}
+
+export function saveFont(role: FontRole, family: string): void {
+  write(`sagar.font.${role}`, family);
+}
+
+/** Quote a family as a CSS string so punctuation cannot become CSS syntax. */
+export function fontStack(family: string, fallback: string): string {
+  const quoted = family
+    .replace(/\\/g, "\\\\")
+    .replace(/"/g, '\\"')
+    .replace(/[\n\r\f]/g, " ");
+  return family ? `"${quoted}", ${fallback}` : fallback;
+}

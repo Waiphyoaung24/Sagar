@@ -1,8 +1,17 @@
+import { useEffect, useState } from "react";
 import { Icon } from "../../components/Icon";
 import { useTranslation } from "../../lib/i18n";
-import type { ThemePreference } from "../../lib/prefs";
+import {
+  type FontPreferences,
+  type FontRole,
+  fontStack,
+  type ThemePreference,
+} from "../../lib/prefs";
+import { listSystemFonts } from "../../lib/tauri/commands";
 
 export type AppearancePreferences = {
+  fonts?: FontPreferences;
+  onFontChange?: (role: FontRole, family: string) => void;
   theme: ThemePreference;
   textSize: number;
   onThemeChange: (theme: ThemePreference) => void;
@@ -10,12 +19,35 @@ export type AppearancePreferences = {
 };
 
 export function AppearanceSettings({
+  fonts = { ui: "", translation: "" },
+  onFontChange,
   theme,
   textSize,
   onThemeChange,
   onTextSizeChange,
 }: AppearancePreferences) {
   const { t, language, setLanguage } = useTranslation();
+  const [families, setFamilies] = useState<string[]>([]);
+  const [fontState, setFontState] = useState<"loading" | "ready" | "error">("loading");
+  const [attempt, setAttempt] = useState(0);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: Retry triggers a new local font scan.
+  useEffect(() => {
+    let active = true;
+    setFontState("loading");
+    listSystemFonts()
+      .then((names) => {
+        if (active) {
+          setFamilies(names);
+          setFontState("ready");
+        }
+      })
+      .catch(() => {
+        if (active) setFontState("error");
+      });
+    return () => {
+      active = false;
+    };
+  }, [attempt]);
   return (
     <section className="appearance-settings" aria-labelledby="appearance-heading">
       <h3 className="visually-hidden" id="appearance-heading">
@@ -96,6 +128,72 @@ export function AppearanceSettings({
             <option value="dark">{t("Dark")}</option>
           </select>
         </label>
+      </div>
+      <div className="appearance-settings__reading">
+        {(["ui", "translation"] as const).map((role) => {
+          const label = role === "ui" ? "UI font" : "Translation book font";
+          const names =
+            fonts[role] && !families.includes(fonts[role])
+              ? [fonts[role], ...families]
+              : families;
+          return (
+            <div key={role}>
+              <label className="form-field settings-row">
+                <span className="settings-label">
+                  <Icon name="paragraph" />
+                  {t(label)}
+                </span>
+                <select
+                  className="settings-select"
+                  value={fonts[role]}
+                  disabled={!onFontChange || fontState === "loading"}
+                  onChange={(event) => onFontChange?.(role, event.target.value)}
+                >
+                  <option value="">{t("Default font")}</option>
+                  {names.map((name) => (
+                    <option key={name} value={name}>
+                      {name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <p
+                className="appearance-preview appearance-font-preview"
+                style={{
+                  fontFamily: fontStack(
+                    fonts[role],
+                    role === "ui" ? "var(--font-ui-default)" : "var(--font-book)",
+                  ),
+                  fontSize: role === "ui" ? undefined : textSize,
+                }}
+              >
+                <span lang="en">The next chapter begins here.</span>{" "}
+                <span lang="my">မြန်မာစာကို ဖတ်ရှုရန်</span>
+              </p>
+            </div>
+          );
+        })}
+        <p className="dialog__muted" role="status">
+          {t(
+            fontState === "loading"
+              ? "Loading system fonts…"
+              : fontState === "error"
+                ? "Could not load system fonts. Try again."
+                : families.length === 0
+                  ? "No system fonts found."
+                  : "Font choices apply to Sagar only. Exported books keep their styles.",
+          )}
+        </p>
+        {fontState !== "loading" && (fontState === "error" || families.length === 0) ? (
+          <button
+            type="button"
+            className="button button--secondary"
+            onClick={() => setAttempt((value) => value + 1)}
+          >
+            <Icon name="refresh" />
+            {t("Retry")}
+          </button>
+        ) : null}
       </div>
       <div className="appearance-settings__reading">
         <div className="appearance-settings__size-heading">

@@ -697,7 +697,7 @@ button {
   border-radius: var(--radius-control);
   background: var(--color-bg);
   color: var(--color-text);
-  font-family: var(--font-book);
+  font-family: var(--font-translation, var(--font-book));
   font-size: var(--text-book);
   line-height: var(--leading-book);
   padding: var(--space-2) var(--space-3);
@@ -1474,7 +1474,7 @@ button {
 }
 .rich-block {
   outline: none;
-  font-family: var(--font-book);
+  font-family: var(--font-translation, var(--font-book));
   font-size: var(--text-book, 18px);
   line-height: var(--leading-book);
   min-height: 2.1em;
@@ -1580,7 +1580,7 @@ button {
 .chapter-editor {
   min-height: 55vh;
   outline: none;
-  font-family: var(--font-book);
+  font-family: var(--font-translation, var(--font-book));
   font-size: var(--text-book, 18px);
   line-height: var(--leading-book);
   overflow-wrap: anywhere;
@@ -3081,4 +3081,9 @@ button {
 .language-dialog .language-picker__options p {
   padding: var(--space-2);
   margin: 0;
+}
+
+.appearance-font-preview {
+  margin: 0;
+  overflow-wrap: anywhere;
 }

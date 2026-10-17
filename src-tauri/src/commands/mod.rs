@@ -474,3 +474,9 @@ pub async fn delete_ai_selection_run(
     let dir = app_data_dir(&app)?;
     run_blocking(move || services::ai_selection::delete_run(&dir, &chapter_id, &run_id)).await
 }
+
+/// Font discovery runs off the UI thread and returns family names only.
+#[tauri::command]
+pub async fn list_system_fonts() -> Result<Vec<String>, AppError> {
+    run_blocking(|| Ok(services::fonts::list_system_fonts())).await
+}

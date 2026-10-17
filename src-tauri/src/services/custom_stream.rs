@@ -997,9 +997,9 @@ mod tests {
         assert_eq!(body["stream"], true);
         assert_eq!(body["messages"][0]["content"], prompt);
         let sent = body["messages"][0]["content"].as_str().unwrap();
-        assert!(sent.contains("from English (en) into Myanmar (my)"));
-        assert!(sent.contains("Translation language (Book Settings): Myanmar (my)"));
-        assert!(sent.contains("prose and headings in Myanmar (my)"));
+        assert!(sent.contains("from English (en) into Myanmar · မြန်မာ (my)"));
+        assert!(sent.contains("Translation language (Book Settings): Myanmar · မြန်မာ (my)"));
+        assert!(sent.contains("prose and headings in Myanmar · မြန်မာ (my)"));
         assert!(body.get("tools").is_none());
     }
 

@@ -131,6 +131,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             commands::health_check,
+            commands::list_system_fonts,
             commands::import_epub,
             commands::list_projects,
             commands::get_project,

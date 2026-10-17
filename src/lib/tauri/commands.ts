@@ -250,3 +250,11 @@ export async function saveBookSettings(
     throw toCommandError(error);
   }
 }
+
+export async function listSystemFonts(): Promise<string[]> {
+  try {
+    return await invoke<string[]>("list_system_fonts");
+  } catch (error) {
+    throw toCommandError(error);
+  }
+}

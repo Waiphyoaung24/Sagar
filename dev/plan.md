@@ -1,5 +1,17 @@
 # Plan.md — EPUB Translation Studio
 
+### Shared language prompt test expectations — 2026-10-16
+
+Updated the existing prompt and custom HTTP transport tests to expect the shared
+catalog's Myanmar, Shan and Mon labels, including their Myanmar-script names.
+Production prompt behavior is unchanged. This continues language compatibility
+polish; no milestone checkboxes advanced.
+
+Validation: `cargo fmt --check` and the full `cargo test` suite passed (238 passed,
+four existing ignored), including all three reported failures. No UI or native
+behavior changed; frontend and native checks were not run. Next unfinished task:
+verify the language picker and glyph rendering in rebuilt native Sagar.
+
 ### Rich highlighted code metadata — 2026-10-16
 
 Allow passive `data-highlighted` only on XHTML code elements in document
@@ -1970,3 +1982,23 @@ in the Shan/Arakanese catalogs; build separately passed with the existing bundle
 size warning. Native UI, light/dark, minimum-size layout, Mon glyph rendering and
 Windows/Linux behavior were not verified. Next unfinished task: native-speaker
 review and completion of the Mon catalog, then native visual verification.
+
+### System display fonts — 2026-10-16
+
+Added Settings → Appearance selectors for UI and translated book fonts, populated
+from local system font discovery through a Rust service (`fontdb`). Each has an
+English/Myanmar preview, immediate application, local persistence and a Default
+font option. Loading, discovery failure/retry, empty discovery and missing saved
+fonts retain recoverable preferences. Per the confirmed scope, original EPUB
+rendering and CSS remain unchanged. These are display preferences; exported EPUB
+styles and editor content are unchanged. No milestone checkboxes advanced.
+
+Validation: `bun run lint`, `bun run build` and five focused frontend tests
+(71 assertions) passed. Build retains the existing bundle-size warning. Native
+layout, keyboard interaction, light/dark previews, minimum size, Myanmar shaping
+and Windows/Linux discovery remain unverified; no running Sagar window was
+available. Next unfinished task: verify the font pickers in rebuilt native Sagar.
+Rust formatting passed; Rust library tests passed (180 passed, 2 ignored),
+including a local font discovery smoke test. Font discovery uses the cross-platform
+system-directory scanning supported by fontdb; OS-disabled or nonstandard font
+installations may not appear in the list.

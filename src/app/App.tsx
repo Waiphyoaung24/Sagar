@@ -3,8 +3,12 @@ import { LibraryScreen } from "../features/library/LibraryScreen";
 import { WorkspaceFrame } from "../features/workspace/WorkspaceFrame";
 import { useTranslation } from "../lib/i18n";
 import {
+  type FontRole,
+  fontStack,
+  loadFonts,
   loadTextZoom,
   loadTheme,
+  saveFont,
   saveTextZoom,
   saveTheme,
   type ThemePreference,
@@ -23,6 +27,20 @@ export default function App() {
   } | null>(null);
   const [theme, setTheme] = useState<ThemePreference>(loadTheme);
   const [zoom, setZoom] = useState<number>(loadTextZoom);
+
+  const [fonts, setFonts] = useState(loadFonts);
+  const updateFont = useCallback((role: FontRole, family: string) => {
+    setFonts((current) => ({ ...current, [role]: family }));
+    saveFont(role, family);
+  }, []);
+  useEffect(() => {
+    const root = document.documentElement;
+    root.style.setProperty("--font-ui", fontStack(fonts.ui, "var(--font-ui-default)"));
+    root.style.setProperty(
+      "--font-translation",
+      fontStack(fonts.translation, "var(--font-book)"),
+    );
+  }, [fonts]);
 
   // Apply presentation preferences to the document. The "system" theme is
   // resolved in CSS via prefers-color-scheme.
@@ -106,6 +124,8 @@ export default function App() {
       </div>
       <LibraryScreen
         appearance={{
+          fonts,
+          onFontChange: updateFont,
           theme,
           textSize: zoom,
           onThemeChange: updateTheme,
