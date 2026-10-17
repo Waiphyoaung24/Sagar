@@ -1,5 +1,24 @@
 # Plan.md — EPUB Translation Studio
 
+### Rich highlighted code metadata — 2026-10-16
+
+Allow passive `data-highlighted` only on XHTML code elements in document
+validation and retain it through Rich normalization, editing and serialization.
+Marked pre/code blocks use the existing pre container so inner code attributes
+and syntax spans survive instead of being discarded by the stock code block.
+A shared synthetic fixture covers inline/block code, whitespace, Myanmar text,
+reload and rejection of event/unrecognized attributes. Continues Milestone 5
+compatibility polish; no milestone checkboxes advanced.
+
+Validation: build, changed-source Biome and Rust formatting passed; all 18 Rust
+rich-text tests and the targeted Rich regression passed. The broader frontend
+file had 27 passing tests and the previously documented local-image-count
+failure. Full check remains blocked by existing formatting in mnw/rki/shn
+catalogs; build retains its bundle-size warning. Native rendering, IME,
+light/dark/minimum-size and cross-platform behavior were not verified. Next
+unfinished task: rebuild Sagar and retry the affected proposal in native Rich
+view. Full EPUB export/reopen was not exercised for this attribute change.
+
 ### Select heading groups and preserve time in translations — 2026-10-16
 
 Fixed the mismatch between source preview, Rich editing and selected-paragraph

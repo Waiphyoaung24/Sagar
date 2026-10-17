@@ -432,3 +432,22 @@ test("selected heading groups and time survive Rich typing and reload", async ()
     expect(comparableDocument(editor.getHTML())).toBe(comparableDocument(saved));
   } finally { editor.destroy(); }
 });
+
+test("highlighted code metadata survives Rich conversion, editing and reload", async () => {
+  const source = (await Bun.file(new URL("../fixtures/editor/highlighted-code.xhtml", import.meta.url)).text()).trim();
+  const normalized = normalizeRichDocument(source);
+  expect(normalized).toContain('data-highlighted="yes"');
+  const editor = createEditor(normalized);
+  try {
+    expect(comparableDocument(editor.getHTML())).toBe(comparableDocument(normalized));
+    editor.commands.insertContentAt(1, "မြန်မာ ");
+    const saved = documentFragment(editor.getHTML());
+    expect(saved.match(/data-highlighted="yes"/g)).toHaveLength(2);
+    expect(saved).toContain('<span class="hljs-keyword">const</span>');
+    expect(saved).toContain('\n  next();');
+    editor.commands.setContent(saved, { parseOptions: { preserveWhitespace: true } });
+    expect(comparableDocument(editor.getHTML())).toBe(comparableDocument(saved));
+  } finally {
+    editor.destroy();
+  }
+});

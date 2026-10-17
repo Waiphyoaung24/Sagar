@@ -288,7 +288,9 @@ export function createBookStructure(imageBase = "") {
             getAttrs: (element) =>
               tag === "pre" &&
               element.childNodes.length === 1 &&
-              element.firstElementChild?.tagName === "CODE"
+              element.firstElementChild?.tagName === "CODE" &&
+              // The stock code block discards attributes on its inner code.
+              !element.firstElementChild.hasAttribute("data-highlighted")
                 ? false
                 : {},
           },

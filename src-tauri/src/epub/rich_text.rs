@@ -619,6 +619,7 @@ fn validate_schema(fragment: &str, document: bool) -> Result<(String, String), A
                         "class" | "id" | "style" | "title" | "lang" | "dir" | "role" | "data-parent"
                     ) || attr_name.starts_with("aria-")
                         || attr_name == "xml:lang"
+                        || (is_xhtml && tag == "code" && attr_name == "data-highlighted")
                         || is_preserved_layout_attr(tag, attr_name)))
             {
                 return Err(invalid_detail(format!(
@@ -858,6 +859,22 @@ fn validate_schema(fragment: &str, document: bool) -> Result<(String, String), A
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn highlighted_code_round_trip() {
+        let input = include_str!("../../../tests/fixtures/editor/highlighted-code.xhtml").trim();
+        let (saved, text) = validate_document(input).expect("passive code metadata");
+        assert_eq!(saved, input);
+        assert!(text.contains("မြန်မာ"));
+        assert_eq!(validate_document(&saved).expect("reload").0, saved);
+        for invalid in [
+            "<p data-highlighted=\"yes\">text</p>",
+            "<p><code onclick=\"alert(1)\">text</code></p>",
+            "<p><code data-unknown=\"yes\">text</code></p>",
+        ] {
+            assert!(validate_document(invalid).is_err());
+        }
+    }
+
     #[test]
     fn formatting_and_unicode_round_trip() {
         let (html, text) =

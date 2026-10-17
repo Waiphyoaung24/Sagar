@@ -8,6 +8,15 @@ export const BookAttributes = Extension.create({
   addGlobalAttributes() {
     return [
       {
+        types: ["code", "book_empty_code"],
+        attributes: {
+          "data-highlighted": {
+            default: null,
+            parseHTML: (element: HTMLElement) => element.getAttribute("data-highlighted"),
+          },
+        },
+      },
+      {
         types: ["book_div", "book_text_div"],
         attributes: {
           align: {
