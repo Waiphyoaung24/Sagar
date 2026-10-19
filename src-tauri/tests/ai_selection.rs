@@ -257,6 +257,65 @@ fn heading_with_flow_placement_style_is_selectable_and_stale_caches_heal() {
 }
 
 #[test]
+fn stale_span_unit_is_rehomed_when_the_wrapper_div_becomes_the_unit() {
+    let dir = tempfile::tempdir().expect("dir");
+    let source = fixture(
+        dir.path(),
+        "<html xmlns=\"http://www.w3.org/1999/xhtml\"><head><title>T</title></head><body><div class=\"class15\"><span class=\"class16\">He swept the floor with his jacket.</span></div></body></html>",
+    );
+    let data = dir.path().join("data");
+    let imported = services::import::import_epub(&data, &source, false).expect("import");
+    let chapter = &imported.chapters[0].id;
+    // Older selection code treated the wrapper span as the unit. Simulate that
+    // cached row plus an unrelated orphan left by the same upgrade.
+    {
+        let conn = services::workspace::open_db(&data).expect("db");
+        let stale = sagar_lib::epub::selection::SourceUnit {
+            id: "stale-span".into(),
+            order: 0,
+            locator: "0/0".into(),
+            kind: "paragraph".into(),
+            text: "He swept the floor with his jacket.".into(),
+            html: "<span class=\"class16\">He swept the floor with his jacket.</span>".into(),
+            ancestors: vec![sagar_lib::epub::selection::Ancestor {
+                locator: "0".into(),
+                opening: "<div class=\"class15\">".into(),
+                closing: "</div>".into(),
+            }],
+            unavailable: Some("This <span> structure cannot be selected safely yet.".into()),
+        };
+        repo::put_unit(&conn, chapter, "test-fingerprint", &stale).expect("stale span");
+        let orphan = sagar_lib::epub::selection::SourceUnit {
+            id: "orphan".into(),
+            order: 9,
+            locator: "9/9".into(),
+            kind: "paragraph".into(),
+            text: "Removed by a later validator.".into(),
+            html: "<p>Removed by a later validator.</p>".into(),
+            ancestors: vec![],
+            unavailable: Some("This <p> structure cannot be selected safely yet.".into()),
+        };
+        repo::put_unit(&conn, chapter, "test-fingerprint", &orphan).expect("orphan");
+    }
+    let state = ai_selection::load(&data, chapter).expect("load");
+    assert_eq!(
+        state.units.len(),
+        1,
+        "{:?}",
+        state
+            .units
+            .iter()
+            .map(|u| (&u.id, &u.unavailable))
+            .collect::<Vec<_>>()
+    );
+    let unit = &state.units[0];
+    assert!(unit.unavailable.is_none(), "{:?}", unit.unavailable);
+    // The cached id is reused so any saved proposals stay attached.
+    assert_eq!(unit.id, "stale-span");
+    assert!(unit.text.contains("He swept the floor"));
+}
+
+#[test]
 fn selected_content_translates_then_appends_exports_and_reopens_with_original_image_bytes() {
     let dir = tempfile::tempdir().expect("dir");
     let source = fixture(dir.path(), SOURCE);

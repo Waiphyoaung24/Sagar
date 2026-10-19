@@ -354,3 +354,41 @@ over older delayed completions. Legacy duplicate proposals are cleaned on load.
 The version picker is removed; other paragraphs and chapter drafts remain intact.
 Frontend and Rust replacement regressions passed; native interaction verification
 remains pending. This supersedes the previous multiple-version retention policy.
+
+### OpenCode V2 compatibility — 2026-10-19 (explicitly authorized)
+
+The OpenCode V2 upgrade changed the CLI contract and the server API, which broke
+the OpenCode translation path end to end. The V1 spellings are gone and the
+adapter now speaks V2 only. This supersedes the earlier V1-based discovery,
+streaming and cleanup behavior recorded above.
+
+Model discovery reads the V2 catalog with `opencode api model.list`, which
+performs service discovery and authentication itself and never leaves the
+machine. The catalog document is `{ location, data[] }`; each entry supplies
+`providerID`, `modelID`, a display name and the advertised variants, which
+become the model's reasoning-effort options. The plain `opencode models` list
+remains a fallback when the API is unavailable.
+
+The translation server runs against the V2 HTTP API: `POST /api/session` (the
+model and variant travel with the session), `GET /api/event` for the SSE
+stream, `POST /api/session/{id}/prompt`, `POST /api/session/{id}/interrupt`
+and `DELETE /api/session/{id}`. V2 responses wrap their payload in a
+`{ location, data }` envelope. V2 only accepts the built-in `opencode`
+basic-auth user, and every route requires the server password, so the adapter
+authenticates with it. Sharing stays disabled through the injected inline
+configuration, which V2 exposes as the configuration entry without a path.
+
+The event vocabulary changed completely: V1 `message.updated` /
+`message.part.updated` / `message.part.delta` are now `session.step.started` /
+`session.step.ended`, `session.text.started` / `session.text.delta` /
+`session.text.ended`, closed by `session.execution.succeeded`. Text is grouped
+by ordinal, only the assistant turn started by `session.step.started` may
+become a proposal, reasoning and the echoed user prompt are never streamed, and
+any tool request still aborts the run without approving anything. A failed
+turn reports the provider error from the assistant message instead of a
+generic failure.
+
+Verified against the installed OpenCode V2 CLI: the live catalog probe reads
+50 models, and the live stream probe returns the requested text over SSE.
+243 Rust tests passed (two existing ignored probes) and clippy reports no new
+findings; native UI interaction and cross-platform verification remain open.

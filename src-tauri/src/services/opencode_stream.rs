@@ -23,28 +23,32 @@ fn failed() -> AppError {
 }
 /// Classify provider failures without echoing response bodies, credentials,
 /// paths or prompt text into user-visible diagnostics.
+///
+/// OpenCode V2 reports failures as `{ "type", "message", "status" }`; the
+/// response body is never surfaced because it can contain provider detail.
 fn provider_error(error: &Value) -> AppError {
-    let status = error["data"]["statusCode"].as_u64();
-    let free_tier = error["data"]["message"]
+    let status = error["status"].as_u64();
+    let kind = error["type"].as_str().unwrap_or_default();
+    let free_tier = error["message"]
         .as_str()
         .is_some_and(|message| message.to_ascii_lowercase().contains("free tier"));
-    let message = match (error["name"].as_str(), status) {
-        (_, Some(403)) if free_tier => {
+    let message = match (status, kind) {
+        (Some(403), _) if free_tier => {
             "OpenCode's free-model access check rejected this session (HTTP 403). Retry in OpenCode to check provider access."
         }
-        (_, Some(401)) | (Some("ProviderAuthError"), _) => {
+        (Some(401), _) | (_, "provider.auth") => {
             "OpenCode provider authentication failed. Sign in to that provider in OpenCode, then retry."
         }
-        (_, Some(403)) => {
+        (Some(403), _) => {
             "The OpenCode provider rejected the request (HTTP 403). Check provider access in OpenCode, then retry."
         }
-        (_, Some(429)) => {
+        (Some(429), _) => {
             "The OpenCode provider's usage limit was reached (HTTP 429). Wait before retrying."
         }
-        (_, Some(500..=599)) => {
+        (Some(500..=599), _) => {
             "The OpenCode provider is temporarily unavailable. Retry after the service recovers."
         }
-        (Some("MessageOutputLengthError"), _) => {
+        (_, "provider.overage") => {
             "OpenCode reached the model's output limit. The incomplete response was not applied; retry keeps complete sections."
         }
         _ => {
@@ -102,9 +106,10 @@ struct Server {
 }
 impl Server {
     fn request(&self, method: reqwest::Method, path: &str) -> RequestBuilder {
+        // OpenCode V2 only accepts the built-in `opencode` basic-auth user.
         self.client
             .request(method, format!("{}{path}", self.base))
-            .basic_auth("sagar", Some(&self.password))
+            .basic_auth("opencode", Some(&self.password))
     }
     fn start(
         binary: &Path,
@@ -121,7 +126,6 @@ impl Server {
             .current_dir(cwd)
             .env("OPENCODE_CONFIG_CONTENT", config)
             .env("OPENCODE_SERVER_PASSWORD", &password)
-            .env("OPENCODE_SERVER_USERNAME", "sagar")
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
@@ -201,11 +205,14 @@ impl Drop for Server {
         if let Some(session) = &self.session {
             // Remove only this adapter's temporary session, never user sessions.
             let _ = self
-                .request(reqwest::Method::POST, &format!("/session/{session}/abort"))
+                .request(
+                    reqwest::Method::POST,
+                    &format!("/api/session/{session}/interrupt"),
+                )
                 .timeout(Duration::from_millis(500))
                 .send();
             let _ = self
-                .request(reqwest::Method::DELETE, &format!("/session/{session}"))
+                .request(reqwest::Method::DELETE, &format!("/api/session/{session}"))
                 .timeout(Duration::from_millis(500))
                 .send();
         }
@@ -279,135 +286,121 @@ impl Sse {
     }
 }
 #[derive(Default)]
-struct Part {
-    message: String,
+struct Block {
     text: String,
     sent: usize,
 }
 #[derive(Default)]
 struct Events {
     session: String,
-    roles: HashMap<String, String>,
-    parts: HashMap<String, Part>,
-    order: Vec<String>,
-    latest: Option<String>,
+    message: Option<String>,
+    blocks: HashMap<u64, Block>,
+    order: Vec<u64>,
     complete: bool,
+    failed: bool,
     done: bool,
 }
 impl Events {
-    fn emit(&mut self, id: &str, on_text: &mut impl FnMut(&[u8])) -> Result<(), AppError> {
-        if self.parts.len() > 2000
-            || self.roles.len() > 2000
-            || self.parts.values().map(|p| p.text.len()).sum::<usize>() > MAX_TEXT
+    /// Only the assistant turn started by `session.step.started` may become a
+    /// proposal. Text belonging to the echoed user prompt, to another message
+    /// or to reasoning is never streamed.
+    fn owns_message(&self, data: &Value) -> bool {
+        match (self.message.as_deref(), data["assistantMessageID"].as_str()) {
+            (Some(message), Some(owner)) => message == owner,
+            _ => false,
+        }
+    }
+    /// Returns the text block for an ordinal, registering it on first use.
+    fn block(&mut self, ordinal: u64) -> &mut Block {
+        if let std::collections::hash_map::Entry::Vacant(entry) = self.blocks.entry(ordinal) {
+            entry.insert(Block::default());
+            self.order.push(ordinal);
+        }
+        self.blocks.get_mut(&ordinal).expect("block just inserted")
+    }
+    fn emit(&mut self, on_text: &mut impl FnMut(&[u8])) -> Result<(), AppError> {
+        if self.blocks.len() > 2000
+            || self.order.len() > 2000
+            || self.blocks.values().map(|b| b.text.len()).sum::<usize>() > MAX_TEXT
         {
             return Err(AppError::new(
                 "proposal_too_large",
                 "The OpenCode proposal was too large to use safely.",
             ));
         }
-        if let Some(part) = self.parts.get_mut(id) {
-            if self
-                .roles
-                .get(&part.message)
-                .is_some_and(|role| role == "assistant")
-            {
-                if part.text.len() > part.sent {
-                    on_text(part.text[part.sent..].as_bytes());
+        for ordinal in self.order.clone() {
+            if let Some(block) = self.blocks.get_mut(&ordinal) {
+                if block.text.len() > block.sent {
+                    on_text(&block.text.as_bytes()[block.sent..]);
                 }
-                part.sent = part.text.len();
+                block.sent = block.text.len();
             }
         }
         Ok(())
     }
+    /// OpenCode V2 streams a session as `session.*` events whose payload sits
+    /// under `data`. Text arrives as `session.text.delta` and is finalised by
+    /// `session.text.ended`; `session.step.ended` reports the assistant turn's
+    /// finish reason and `session.execution.succeeded` closes the run.
     fn handle(&mut self, value: Value, on_text: &mut impl FnMut(&[u8])) -> Result<(), AppError> {
-        let p = value
-            .get("properties")
-            .or_else(|| value.get("data"))
-            .ok_or_else(failed)?;
         let kind = value["type"].as_str().ok_or_else(failed)?;
-        let session = p["sessionID"]
-            .as_str()
-            .or_else(|| p["info"]["sessionID"].as_str())
-            .or_else(|| p["part"]["sessionID"].as_str());
-        if session != Some(&self.session) {
+        let data = value.get("data").ok_or_else(failed)?;
+        if data["sessionID"].as_str() != Some(self.session.as_str()) {
             return Ok(());
         }
         match kind {
-            "message.updated" => {
-                let info = &p["info"];
-                let id = info["id"].as_str().ok_or_else(failed)?;
-                let role = info["role"].as_str().ok_or_else(failed)?;
-                self.roles.insert(id.into(), role.into());
-                if role == "assistant" {
-                    if !info["error"].is_null() {
-                        return Err(provider_error(&info["error"]));
-                    }
-                    self.latest = Some(id.into());
-                    self.complete =
-                        info["time"]["completed"].is_number() && info["finish"] == "stop";
-                    let ids = self.order.clone();
-                    for id in ids {
-                        self.emit(&id, on_text)?;
-                    }
+            "session.step.started" => {
+                self.message = data["assistantMessageID"].as_str().map(str::to_string);
+            }
+            "session.text.started" => {
+                let ordinal = data["ordinal"].as_u64().ok_or_else(failed)?;
+                if self.owns_message(data) {
+                    self.block(ordinal);
                 }
             }
-            "message.part.updated"
-                if p["part"]["type"] == "text"
-                    && p["part"]["ignored"] != true
-                    && p["part"]["synthetic"] != true =>
-            {
-                let part = &p["part"];
-                let id = part["id"].as_str().ok_or_else(failed)?;
-                let message = part["messageID"].as_str().ok_or_else(failed)?;
-                let text = part["text"].as_str().ok_or_else(failed)?;
-                if !self.parts.contains_key(id) {
-                    self.order.push(id.into());
+            "session.text.delta" => {
+                let ordinal = data["ordinal"].as_u64().ok_or_else(failed)?;
+                let delta = data["delta"].as_str().ok_or_else(failed)?;
+                if !self.owns_message(data) {
+                    return Ok(());
                 }
-                let stored = self.parts.entry(id.into()).or_default();
-                stored.message = message.into();
-                if text.starts_with(&stored.text) {
-                    stored.text = text.into();
-                } else if !stored.text.starts_with(text) {
-                    return Err(failed());
-                }
-                self.emit(id, on_text)?;
+                self.block(ordinal).text.push_str(delta);
+                self.emit(on_text)?;
             }
-            "message.part.delta" if p["field"] == "text" => {
-                let id = p["partID"].as_str().ok_or_else(failed)?;
-                // Text parts are registered by their initial snapshot. Never
-                // stream reasoning, tools, or the user's echoed prompt.
-                if let Some(part) = self.parts.get_mut(id) {
-                    if p["messageID"].as_str() != Some(part.message.as_str()) {
-                        return Err(failed());
-                    }
-                    part.text.push_str(p["delta"].as_str().ok_or_else(failed)?);
-                    self.emit(id, on_text)?;
+            "session.text.ended" => {
+                let ordinal = data["ordinal"].as_u64().ok_or_else(failed)?;
+                let text = data["text"].as_str().unwrap_or_default();
+                if !self.owns_message(data) {
+                    return Ok(());
                 }
+                let block = self.block(ordinal);
+                // The final snapshot is authoritative when it extends what was
+                // already streamed; a shorter snapshot is ignored so the user
+                // never sees text retracted mid-run.
+                if text.starts_with(&block.text) {
+                    block.text = text.to_string();
+                }
+                self.emit(on_text)?;
             }
-            "session.error" => return Err(provider_error(&p["error"])),
-            "permission.asked" | "question.asked" => {
+            "session.step.ended" => match data["finish"].as_str().unwrap_or_default() {
+                "stop" => self.complete = true,
+                "error" | "abort" => self.failed = true,
+                _ => {}
+            },
+            "session.execution.succeeded" | "session.execution.failed" => {
+                self.done = true;
+            }
+            "session.tool.input.started" | "session.tool.called" => {
                 return Err(AppError::new(
                     "opencode_tool_requested",
                     "OpenCode requested an interactive tool during translation. No tool was approved and your draft is unchanged.",
                 ));
             }
-            "session.idle" => {
-                if self.latest.is_some() && !self.complete {
-                    return Err(failed());
-                }
-                self.done = self.complete;
-            }
-            "session.status" if p["status"]["type"] == "idle" => {
-                if self.latest.is_some() && !self.complete {
-                    return Err(failed());
-                }
-                self.done = self.complete;
-            }
             _ => {}
         }
-        if self.parts.len() > 2000
-            || self.roles.len() > 2000
-            || self.parts.values().map(|p| p.text.len()).sum::<usize>() > MAX_TEXT
+        if self.blocks.len() > 2000
+            || self.order.len() > 2000
+            || self.blocks.values().map(|b| b.text.len()).sum::<usize>() > MAX_TEXT
         {
             return Err(AppError::new(
                 "proposal_too_large",
@@ -417,15 +410,14 @@ impl Events {
         Ok(())
     }
     fn response(&self) -> Result<Vec<u8>, AppError> {
-        if !self.done {
+        if !self.done || !self.complete {
             return Err(failed());
         }
         let text: String = self
             .order
             .iter()
-            .filter_map(|id| self.parts.get(id))
-            .filter(|p| Some(&p.message) == self.latest.as_ref())
-            .map(|p| p.text.as_str())
+            .filter_map(|ordinal| self.blocks.get(ordinal))
+            .map(|block| block.text.as_str())
             .collect();
         if text.trim().is_empty() {
             return Err(failed());
@@ -463,13 +455,23 @@ pub(super) fn run(
         .map(|v| v[1].as_str());
     let started = Instant::now();
     let mut server = Server::start(binary, cwd, cancel, started, timeout)?;
+    // OpenCode V2 serves the effective configuration as a list of documents.
+    // The inline configuration Sagar injects is the entry without a path, and
+    // it has the highest precedence, so it decides the effective share mode.
     let config = read_json(
         server
-            .request(reqwest::Method::GET, "/config")
+            .request(reqwest::Method::GET, "/api/config")
             .send()
             .map_err(|_| failed())?,
     )?;
-    if config["share"] != "disabled" {
+    let share = config.as_array().and_then(|entries| {
+        entries
+            .iter()
+            .find(|entry| entry["path"].is_null() && entry["info"].is_object())
+            .and_then(|entry| entry["info"]["share"].as_str())
+            .map(str::to_string)
+    });
+    if share.as_deref() != Some("disabled") {
         return Err(AppError::new(
             "opencode_sharing_enabled",
             "OpenCode's managed settings prevent disabling session sharing. Translation requires sharing to be disabled.",
@@ -477,9 +479,13 @@ pub(super) fn run(
     }
     // Keep OpenCode's normal tool schema: deny removes tools and triggers its
     // free-tier gate. Ask retains the schema, but our event handler aborts any
-    // actual permission request without granting it.
-    let session = read_json(server.request(reqwest::Method::POST, "/session").json(&json!({"title":"Sagar temporary translation","permission":[{"permission":"*","pattern":"*","action":"ask"}]})).send().map_err(|_| failed())?)?;
-    let id = session["id"]
+    // actual tool request without granting it.
+    let mut model = json!({"id": model, "providerID": provider});
+    if let Some(variant) = variant {
+        model["variant"] = json!(variant);
+    }
+    let session = read_json(server.request(reqwest::Method::POST, "/api/session").json(&json!({"title":"Sagar temporary translation","model":model,"permissions":[{"action":"*","resource":"*","effect":"ask"}]})).send().map_err(|_| failed())?)?;
+    let id = session["data"]["id"]
         .as_str()
         .filter(|id| {
             id.starts_with("ses")
@@ -495,7 +501,7 @@ pub(super) fn run(
     // `check`. Give the underlying request headroom so reqwest's own timeout
     // cannot fire at the same instant as the translation deadline and mask a
     // timeout as a generic failure.
-    let request = server.request(reqwest::Method::GET, "/event").timeout(
+    let request = server.request(reqwest::Method::GET, "/api/event").timeout(
         timeout
             .checked_add(Duration::from_secs(10))
             .unwrap_or(timeout),
@@ -547,16 +553,11 @@ pub(super) fn run(
             }
         }
     }
-    let mut body = json!({"model":{"providerID":provider,"modelID":model},"parts":[{"type":"text","text":prompt}]});
-    if let Some(variant) = variant {
-        body["variant"] = json!(variant);
-    }
+    // The model and variant travel with the session, so the prompt only
+    // carries the text to translate.
     server
-        .request(
-            reqwest::Method::POST,
-            &format!("/session/{id}/prompt_async"),
-        )
-        .json(&body)
+        .request(reqwest::Method::POST, &format!("/api/session/{id}/prompt"))
+        .json(&json!({"text": prompt}))
         .send()
         .and_then(|r| r.error_for_status())
         .map_err(|_| failed())?;
@@ -587,60 +588,97 @@ pub(super) fn run(
             }
         }
     }
+    if events.failed {
+        return Err(provider_failure(&server, &events));
+    }
     events.response()
+}
+
+/// Reads the failed assistant turn so the user sees why OpenCode stopped,
+/// without exposing provider response bodies.
+fn provider_failure(server: &Server, events: &Events) -> AppError {
+    let Some(message) = events.message.as_deref() else {
+        return failed();
+    };
+    let detail = server
+        .request(
+            reqwest::Method::GET,
+            &format!("/api/session/{}/message/{message}", events.session),
+        )
+        .send()
+        .ok()
+        .and_then(|response| read_json(response).ok());
+    match detail {
+        Some(value) if value["error"].is_object() => provider_error(&value["error"]),
+        _ => failed(),
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    fn event(kind: &str, properties: Value) -> Value {
-        json!({"type":kind,"properties":properties})
+    fn event(kind: &str, data: Value) -> Value {
+        json!({"type":kind,"data":data})
     }
-    fn message(id: &str, role: &str, finish: bool) -> Value {
-        let mut info = json!({"id":id,"sessionID":"ses_test","role":role,"time":{"created":1}});
-        if finish {
-            info["time"]["completed"] = json!(2);
-            info["finish"] = json!("stop");
-        }
+    fn step_started() -> Value {
         event(
-            "message.updated",
-            json!({"sessionID":"ses_test","info":info}),
+            "session.step.started",
+            json!({"sessionID":"ses_test","agent":"build","assistantMessageID":"msg_answer"}),
         )
     }
-    fn part(message: &str, text: &str) -> Value {
+    fn step_ended(finish: &str) -> Value {
         event(
-            "message.part.updated",
-            json!({"sessionID":"ses_test","part":{"id":"prt_text","messageID":message,"sessionID":"ses_test","type":"text","text":text}}),
+            "session.step.ended",
+            json!({"sessionID":"ses_test","assistantMessageID":"msg_answer","finish":finish}),
+        )
+    }
+    fn text_started() -> Value {
+        event(
+            "session.text.started",
+            json!({"sessionID":"ses_test","assistantMessageID":"msg_answer","ordinal":0}),
         )
     }
     fn delta(text: &str) -> Value {
         event(
-            "message.part.delta",
-            json!({"sessionID":"ses_test","messageID":"msg_answer","partID":"prt_text","field":"text","delta":text}),
+            "session.text.delta",
+            json!({"sessionID":"ses_test","assistantMessageID":"msg_answer","ordinal":0,"delta":text}),
         )
     }
-    fn idle() -> Value {
+    fn text_ended(text: &str) -> Value {
         event(
-            "session.status",
-            json!({"sessionID":"ses_test","status":{"type":"idle"}}),
+            "session.text.ended",
+            json!({"sessionID":"ses_test","assistantMessageID":"msg_answer","ordinal":0,"text":text}),
+        )
+    }
+    fn executed() -> Value {
+        event(
+            "session.execution.succeeded",
+            json!({"sessionID":"ses_test"}),
         )
     }
     #[test]
     fn provider_errors_explain_status_without_echoing_sensitive_output() {
         let error = provider_error(
-            &json!({"name":"APIError","data":{"statusCode":403,"message":"OpenCode's free tier can only be used from within OpenCode","responseBody":"private prompt and credentials"}}),
+            &json!({"type":"provider.error","status":403,"message":"OpenCode's free tier can only be used from within OpenCode","response":{"body":"private prompt and credentials"}}),
         );
         assert_eq!(error.code, "opencode_provider_error");
         assert!(error.message.contains("free-model access"));
         assert!(error.message.contains("403"));
         assert!(!error.message.contains("private"));
+        assert!(
+            provider_error(
+                &json!({"type":"provider.auth","status":403,"message":"Authorization failed"})
+            )
+            .message
+            .contains("authentication")
+        );
         for (status, expected) in [
             (401, "authentication"),
             (429, "usage limit"),
             (503, "temporarily unavailable"),
         ] {
             assert!(
-                provider_error(&json!({"name":"APIError","data":{"statusCode":status}}))
+                provider_error(&json!({"type":"provider.error","status":status}))
                     .message
                     .contains(expected)
             );
@@ -692,22 +730,19 @@ mod tests {
         };
         let mut output = Vec::new();
         for v in [
-            idle(),
-            message("msg_answer", "assistant", false),
-            part("msg_answer", ""),
+            step_started(),
+            text_started(),
             delta("<p>မြန်မာ"),
             delta("</p>"),
-            part("msg_answer", "<p>မြန်မာ</p>"),
+            text_ended("<p>မြန်မာ</p>"),
         ] {
             e.handle(v, &mut |c| output.extend_from_slice(c)).unwrap();
             assert!(!e.done);
         }
         assert_eq!(output, "<p>မြန်မာ</p>".as_bytes());
-        e.handle(message("msg_answer", "assistant", true), &mut |c| {
-            output.extend_from_slice(c)
-        })
-        .unwrap();
-        e.handle(idle(), &mut |_| {}).unwrap();
+        e.handle(step_ended("stop"), &mut |c| output.extend_from_slice(c))
+            .unwrap();
+        e.handle(executed(), &mut |_| {}).unwrap();
         assert_eq!(e.response().unwrap(), output);
     }
     #[test]
@@ -717,26 +752,47 @@ mod tests {
             ..Default::default()
         };
         let mut out = Vec::new();
-        e.handle(message("msg_user", "user", false), &mut |_| {})
-            .unwrap();
-        e.handle(part("msg_user", "private source"), &mut |c| {
-            out.extend_from_slice(c)
-        })
-        .unwrap();
-        e.handle(event("message.part.updated",json!({"sessionID":"ses_test","part":{"id":"reason","type":"reasoning","text":"ignore"}})), &mut |_| panic!("reasoning leaked")).unwrap();
         e.handle(
             event(
-                "message.part.delta",
-                json!({"sessionID":"other","field":"text","delta":"ignore"}),
+                "session.text.started",
+                json!({"sessionID":"ses_test","assistantMessageID":"msg_user","ordinal":0}),
+            ),
+            &mut |_| {},
+        )
+        .unwrap();
+        e.handle(
+            event(
+                "session.text.delta",
+                json!({"sessionID":"ses_test","assistantMessageID":"msg_user","ordinal":0,"delta":"private source"}),
+            ),
+            &mut |c| out.extend_from_slice(c),
+        )
+        .unwrap();
+        e.handle(
+            event(
+                "session.reasoning.delta",
+                json!({"sessionID":"ses_test","assistantMessageID":"msg_answer","delta":"ignore"}),
+            ),
+            &mut |_| panic!("reasoning leaked"),
+        )
+        .unwrap();
+        e.handle(
+            event(
+                "session.text.delta",
+                json!({"sessionID":"other","assistantMessageID":"msg_answer","ordinal":0,"delta":"ignore"}),
             ),
             &mut |_| panic!("other session leaked"),
         )
         .unwrap();
         assert!(out.is_empty());
         assert!(e.response().is_err());
+        // A tool request is never approved during translation.
         assert!(
             e.handle(
-                event("session.error", json!({"sessionID":"ses_test","error":{}})),
+                event(
+                    "session.tool.input.started",
+                    json!({"sessionID":"ses_test","assistantMessageID":"msg_answer","name":"shell"}),
+                ),
                 &mut |_| {}
             )
             .is_err()
@@ -748,17 +804,21 @@ mod tests {
             session: "ses_test".into(),
             ..Default::default()
         };
-        e.handle(message("msg_answer", "assistant", false), &mut |_| {})
-            .unwrap();
+        e.handle(step_started(), &mut |_| {}).unwrap();
         assert!(
-            e.handle(
-                part("msg_answer", &"x".repeat(MAX_TEXT + 1)),
-                &mut |_| panic!("oversized output displayed")
-            )
+            e.handle(delta(&"x".repeat(MAX_TEXT + 1)), &mut |_| panic!(
+                "oversized output displayed"
+            ))
             .is_err()
         );
+        // OpenCode V2 prints "server listening on ..."; V1 printed
+        // "opencode server listening on ...". Both must be recognised.
         assert_eq!(
             listening_url("opencode server listening on http://127.0.0.1:1234\n"),
+            Some("http://127.0.0.1:1234".into())
+        );
+        assert_eq!(
+            listening_url("server listening on http://127.0.0.1:1234\n"),
             Some("http://127.0.0.1:1234".into())
         );
         for bad in [
@@ -786,7 +846,7 @@ mod tests {
             let binary = dir.path().join("opencode");
             std::fs::write(
                 &binary,
-                format!("#!/bin/sh\necho 'opencode server listening on {base}'\nexec sleep 10\n"),
+                format!("#!/bin/sh\necho 'server listening on {base}'\nexec sleep 10\n"),
             )
             .unwrap();
             std::fs::set_permissions(&binary, std::fs::Permissions::from_mode(0o755)).unwrap();
@@ -835,34 +895,30 @@ mod tests {
                         serde_json::from_slice(&body).unwrap()
                     };
                     recorded.lock().unwrap().push((request.clone(), body));
-                    if request == "GET /event" {
+                    if request == "GET /api/event" {
                         socket.write_all(b"HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nConnection: close\r\n\r\ndata: {\"type\":\"server.connected\"}\n\n").unwrap();
                         events = Some(socket);
                         continue;
                     }
-                    let response = if request == "POST /session" {
-                        r#"{"id":"ses_test"}"#
-                    } else if request == "GET /config" {
-                        r#"{"share":"disabled"}"#
+                    let response = if request == "POST /api/session" {
+                        r#"{"data":{"id":"ses_test"}}"#
+                    } else if request == "GET /api/config" {
+                        r#"[{"type":"document","path":"/tmp/opencode.json","info":{}},{"type":"document","path":null,"info":{"share":"disabled"}}]"#
                     } else {
                         "true"
                     };
                     socket.write_all(format!("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nConnection: close\r\nContent-Length: {}\r\n\r\n{response}",response.len()).as_bytes()).unwrap();
-                    if request.ends_with("/prompt_async") {
+                    if request.ends_with("/prompt") {
                         let stream = events.as_mut().unwrap();
-                        for v in [
-                            message("msg_answer", "assistant", false),
-                            part("msg_answer", ""),
-                            delta("<p>မြန်မာ"),
-                        ] {
+                        for v in [step_started(), text_started(), delta("<p>မြန်မာ")] {
                             stream
                                 .write_all(format!("data: {v}\n\n").as_bytes())
                                 .unwrap();
                         }
                         if mode == "permission" {
                             let request = event(
-                                "permission.asked",
-                                json!({"sessionID":"ses_test","id":"permission","permission":"bash"}),
+                                "session.tool.input.started",
+                                json!({"sessionID":"ses_test","assistantMessageID":"msg_answer","name":"shell"}),
                             );
                             stream
                                 .write_all(format!("data: {request}\n\n").as_bytes())
@@ -872,9 +928,9 @@ mod tests {
                             std::thread::sleep(Duration::from_millis(200));
                             for v in [
                                 delta("</p>"),
-                                part("msg_answer", "<p>မြန်မာ</p>"),
-                                message("msg_answer", "assistant", true),
-                                idle(),
+                                text_ended("<p>မြန်မာ</p>"),
+                                step_ended("stop"),
+                                executed(),
                             ] {
                                 stream
                                     .write_all(format!("data: {v}\n\n").as_bytes())
@@ -882,7 +938,7 @@ mod tests {
                             }
                         }
                     }
-                    if request == "DELETE /session/ses_test" {
+                    if request == "DELETE /api/session/ses_test" {
                         break;
                     }
                 }
@@ -930,28 +986,30 @@ mod tests {
             let calls = calls.lock().unwrap();
             let create = &calls
                 .iter()
-                .find(|(path, _)| path == "POST /session")
+                .find(|(path, _)| path == "POST /api/session")
                 .unwrap()
                 .1;
-            assert_eq!(create["permission"][0]["action"], "ask");
+            assert_eq!(create["permissions"][0]["action"], "*");
+            assert_eq!(create["permissions"][0]["effect"], "ask");
+            // OpenCode V2 carries the model and variant on the session.
+            assert_eq!(create["model"]["providerID"], "provider");
+            assert_eq!(create["model"]["id"], "model");
+            assert_eq!(create["model"]["variant"], "high");
             let prompt = &calls
                 .iter()
-                .find(|(path, _)| path.ends_with("/prompt_async"))
+                .find(|(path, _)| path.ends_with("/prompt"))
                 .unwrap()
                 .1;
-            assert_eq!(prompt["model"]["providerID"], "provider");
-            assert_eq!(prompt["model"]["modelID"], "model");
-            assert_eq!(prompt["variant"], "high");
-            assert_eq!(prompt["parts"][0]["text"], "Translate.");
+            assert_eq!(prompt["text"], "Translate.");
             assert!(
                 calls
                     .iter()
-                    .any(|(path, _)| path == "POST /session/ses_test/abort")
+                    .any(|(path, _)| path == "POST /api/session/ses_test/interrupt")
             );
             assert!(
                 calls
                     .iter()
-                    .any(|(path, _)| path == "DELETE /session/ses_test")
+                    .any(|(path, _)| path == "DELETE /api/session/ses_test")
             );
         }
     }
@@ -987,7 +1045,13 @@ mod tests {
         .unwrap();
         assert_eq!(result, b"<p>hello</p>");
         assert_eq!(result, streamed);
-        assert!(times.len() > 1, "Expected actual incremental text deltas");
+        // The provider decides how finely it splits its answer, so a short
+        // reply can arrive as a single chunk. The deterministic mock-server
+        // test asserts that several separate chunks are delivered.
+        assert!(
+            !times.is_empty(),
+            "Expected streamed text from the SSE stream"
+        );
         eprintln!(
             "OpenCode live probe: {} deltas, first {:?}, finished {:?}",
             times.len(),

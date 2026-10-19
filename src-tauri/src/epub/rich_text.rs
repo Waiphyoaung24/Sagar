@@ -291,7 +291,7 @@ fn is_safe_external_link(value: &str) -> bool {
 }
 
 /// Presentational attributes real EPUBs carry on containers/tables/cells/images.
-/// Inert strings only; event handlers, URLs and positioning CSS are handled
+/// Inert strings only; event handlers and active CSS values are handled
 /// separately. Values are escaped on serialization.
 fn is_preserved_layout_attr(tag: &str, name: &str) -> bool {
     matches!(
@@ -990,8 +990,12 @@ mod document_tests {
     }
 }
 
-/// Permit book typography and table presentation without network fetches,
-/// overlays or active CSS.
+/// Preserve inline book styles verbatim, including custom properties,
+/// positioning and transforms. The rich editor stores them on
+/// `data-book-style` without applying them, the read-only preview drops them,
+/// and export writes the original declarations back. Only values that could
+/// break out of the attribute or carry an active script/network token are
+/// rejected.
 pub fn validate_style(style: &str) -> Result<(), AppError> {
     for declaration in style.split(';').filter(|part| !part.trim().is_empty()) {
         let Some((property, value)) = declaration.split_once(':') else {
@@ -1000,87 +1004,41 @@ pub fn validate_style(style: &str) -> Result<(), AppError> {
                 "An inline style must use property: value.",
             ));
         };
-        let property_name = property.trim().to_ascii_lowercase();
-        let color_function = matches!(property_name.as_str(), "color" | "background-color")
-            && ["rgb(", "rgba(", "hsl(", "hsla("].iter().any(|prefix| {
-                value
-                    .trim()
-                    .strip_prefix(prefix)
-                    .and_then(|body| body.strip_suffix(')'))
-                    .is_some_and(|body| {
-                        body.chars().all(|c| {
-                            c.is_ascii_digit()
-                                || c.is_ascii_whitespace()
-                                || matches!(c, '.' | ',' | '%' | '+' | '-' | '/')
-                        })
-                    })
-            });
-        if !matches!(
-            property_name.as_str(),
-            "color"
-                | "background-color"
-                | "font-weight"
-                | "font-style"
-                | "font-size"
-                | "font-family"
-                | "line-height"
-                | "text-align"
-                | "text-decoration"
-                | "text-indent"
-                | "letter-spacing"
-                | "word-spacing"
-                | "border"
-                | "border-width"
-                | "border-style"
-                | "border-color"
-                | "border-top"
-                | "border-right"
-                | "border-bottom"
-                | "border-left"
-                | "border-top-width"
-                | "border-right-width"
-                | "border-bottom-width"
-                | "border-left-width"
-                | "border-top-style"
-                | "border-right-style"
-                | "border-bottom-style"
-                | "border-left-style"
-                | "border-top-color"
-                | "border-right-color"
-                | "border-bottom-color"
-                | "border-left-color"
-                | "border-collapse"
-                | "border-spacing"
-                | "table-layout"
-                | "caption-side"
-                | "empty-cells"
-                | "vertical-align"
-                // Flow placement keywords only (none/left/right/both/...):
-                // the shared value guard below still rejects url(),
-                // expression(), @, backslashes and angle brackets.
-                | "clear"
-                | "float"
-                | "width"
-                | "height"
-                | "max-width"
-                | "padding"
-                | "padding-top"
-                | "padding-right"
-                | "padding-bottom"
-                | "padding-left"
-        ) || value.contains(['@', '\\', '<', '>'])
-            || value.contains(['(', ')']) && !color_function
-        {
+        let property = property.trim();
+        if property.is_empty() || property.contains(['@', '\\', '<', '>']) {
+            return Err(AppError::new(
+                "invalid_translation",
+                format!("The inline CSS property {property} is not supported."),
+            ));
+        }
+        if is_active_style_value(value.trim().to_ascii_lowercase().as_str()) {
             return Err(AppError::new(
                 "invalid_translation",
                 format!(
-                    "The inline CSS property {} or its value is not supported. Use typography or table styles without URLs or positioning.",
-                    property.trim()
+                    "The inline CSS value for {property} is not supported. Inline styles must not load URLs or run expressions."
                 ),
             ));
         }
     }
     Ok(())
+}
+
+fn is_active_style_value(value: &str) -> bool {
+    value.contains(['@', '\\', '<', '>'])
+        || [
+            "url(",
+            "expression(",
+            "javascript:",
+            "vbscript:",
+            "-moz-binding",
+            "behavior:",
+            "image(",
+            "image-set(",
+            "element(",
+            "cross-fade(",
+        ]
+        .iter()
+        .any(|token| value.contains(token))
 }
 
 #[cfg(test)]
@@ -1100,16 +1058,72 @@ mod copied_document_tests {
         // Float flow placement (e.g. headings clearing floated cover art)
         // round-trips verbatim; only keyword values have any effect.
         validate_style("clear: both; float: left;").expect("flow placement keywords");
+        // Positioning, transforms and custom properties are layout choices
+        // made by the book; they stay inert in the editor and preview.
+        validate_style("border: 0; position: fixed; z-index: 3; transform: translateY(-1px);")
+            .expect("book positioning styles");
+        validate_style("padding: var(--book-padding); color: var(--book-color);")
+            .expect("book custom properties");
         for style in [
             "border: url(https://example.com/border)",
             "border-image: url(https://example.com/border)",
             "width: expression(alert(1))",
-            "padding: var(--untrusted)",
-            "border: 0; position: fixed",
             "border: 0; @import: evil",
             "border: \\75rl(remote)",
             "clear: url(https://example.com/x)",
             "float: expression(alert(1))",
+        ] {
+            assert!(validate_style(style).is_err(), "{style}");
+        }
+    }
+    #[test]
+    fn arbitrary_book_typography_is_preserved_without_weakening_active_css_checks() {
+        for style in [
+            "white-space: pre-wrap; line-break: strict; margin: 0;",
+            "display: flex; gap: 1em; grid-template-columns: 1fr 2fr;",
+            "font-variant: small-caps; font-feature-settings: 'kern' 1;",
+            "text-transform: uppercase; word-break: break-word; overflow-wrap: anywhere;",
+            "background: linear-gradient(180deg, #fff 0%, rgb(0 0 0 / 20%) 100%);",
+            "padding: calc(1em + 2px); border-radius: 4px;",
+            "position: relative; inset-block-start: 0; z-index: 2;",
+            "transform: translateX(1em); filter: blur(2px);",
+            "color: var(--untrusted); padding: var(--book-padding);",
+        ] {
+            validate_style(style).expect(style);
+        }
+        for style in [
+            "background-image: image-set(\"https://example.com/a.png\" 1x)",
+            "background: element(#overlay)",
+            "background: cross-fade(url(https://example.com/a.png), red)",
+            "behavior: url(#default#time2)",
+            "background: url(https://example.com/a.png)",
+            "width: expression(alert(1))",
+            "color: javascript:alert(1)",
+        ] {
+            assert!(validate_style(style).is_err(), "{style}");
+        }
+    }
+    #[test]
+    fn ebook_wrapper_line_breaking_and_list_spacing_styles_are_supported() {
+        // ebookmaker-style books put line-breaking on the chapter body
+        // container and reset list spacing. Rejecting them made every unit in
+        // the chapter unavailable before it could be translated.
+        let html = "<div class=\"body s1\" style=\"white-space:pre-wrap; line-break:strict;\"><h1 style=\"margin:0\">Title</h1><p>Text</p><ol style=\"padding:0 0 0 1px; margin:0;\"><li>One</li></ol></div>";
+        let (saved, _) = validate_document(html).expect("ebook wrapper styles");
+        for marker in [
+            "white-space:pre-wrap",
+            "line-break:strict",
+            "margin:0",
+            "padding:0 0 0 1px",
+        ] {
+            assert!(saved.contains(marker), "{marker}: {saved}");
+        }
+        assert_eq!(validate_document(&saved).expect("reload").0, saved);
+        // URLs/expressions stay rejected; custom properties are layout input.
+        validate_style("margin: var(--list-margin);").expect("book custom property");
+        for style in [
+            "white-space: url(https://example.com/x)",
+            "line-break: expression(alert(1))",
         ] {
             assert!(validate_style(style).is_err(), "{style}");
         }
@@ -1176,11 +1190,18 @@ mod copied_document_tests {
     fn rejects_active_css_and_event_attributes() {
         for input in [
             "<p style=\"background-color:url(https://example.com/a)\">x</p>",
-            "<p style=\"position:fixed\">x</p>",
+            "<p style=\"color:expression(alert(1))\">x</p>",
             "<p class=\"toc2\" onclick=\"evil()\">x</p>",
         ] {
             assert!(validate_document(input).is_err());
         }
+        let positioned = "<p style=\"position:fixed; top:0; z-index:2; color:var(--x)\">x</p>";
+        assert_eq!(
+            validate_document(positioned)
+                .expect("inert book positioning")
+                .0,
+            positioned
+        );
     }
 }
 

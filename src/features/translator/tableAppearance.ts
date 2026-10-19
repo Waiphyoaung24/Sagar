@@ -1,7 +1,8 @@
 /** Editor-only hints; documentFragment excludes these from saved/exported XHTML. */
 export function tableAppearanceAttributes(attributes: Record<string, unknown>) {
   const table = document.createElement("table");
-  if (typeof attributes.style === "string") table.setAttribute("style", attributes.style);
+  const style = attributes.bookStyle ?? attributes.style;
+  if (typeof style === "string") table.setAttribute("style", style);
   const legacyBorderless = String(attributes.border ?? "").trim() === "0";
   const borderless = ["top", "right", "bottom", "left"].every((side) => {
     const style = table.style.getPropertyValue(`border-${side}-style`);

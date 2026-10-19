@@ -1082,12 +1082,74 @@ fn parse_codex_catalog(text: &str) -> Vec<TranslationModel> {
     models
 }
 
+/// Parses the OpenCode V2 model catalog returned by `opencode api model.list`.
+///
+/// The document is `{ "location": …, "data": [ … ] }` and every entry carries
+/// the provider, the model id, a display name and the advertised variants.
+/// Older V1 output was a plain `provider/model` list, so that shape is still
+/// accepted as a fallback.
+fn parse_opencode_catalog(text: &str) -> Vec<TranslationModel> {
+    let document = serde_json::from_str::<serde_json::Value>(text)
+        .ok()
+        .or_else(|| extract_json_document(text).and_then(|doc| serde_json::from_str(doc).ok()));
+    if let Some(body) = document {
+        let entries = body
+            .get("data")
+            .and_then(|value| value.as_array())
+            .or_else(|| body.as_array());
+        if let Some(entries) = entries {
+            let mut models = Vec::new();
+            let mut seen = HashSet::new();
+            for entry in entries {
+                let Some(provider) = entry["providerID"].as_str() else {
+                    continue;
+                };
+                let Some(model) = entry["modelID"]
+                    .as_str()
+                    .filter(|model| !model.contains('/'))
+                else {
+                    continue;
+                };
+                let Some(id) = clean_model_id(&format!("{provider}/{model}")) else {
+                    continue;
+                };
+                if !seen.insert(id.clone()) {
+                    continue;
+                }
+                let detail = entry["name"]
+                    .as_str()
+                    .map(str::trim)
+                    .filter(|name| !name.is_empty())
+                    .map(|name| name.chars().take(140).collect());
+                let reasoning_efforts = entry["variants"].as_array().map(|variants| {
+                    variants
+                        .iter()
+                        .filter_map(|variant| variant["id"].as_str().or_else(|| variant.as_str()))
+                        .filter(|token| valid_effort_token(token))
+                        .map(str::to_string)
+                        .collect()
+                });
+                models.push(TranslationModel {
+                    label: id.clone(),
+                    id,
+                    detail,
+                    reasoning_efforts,
+                });
+                if models.len() >= MAX_MODELS {
+                    break;
+                }
+            }
+            if !models.is_empty() {
+                return models;
+            }
+        }
+    }
+    parse_opencode_models(text)
+}
+
 /// Parses `opencode models` output: one `provider/model` reference per line.
 /// Lines without a slash (headers, hints) are skipped.
 fn parse_opencode_models(text: &str) -> Vec<TranslationModel> {
-    if text.lines().any(|line| line.trim() == "{") {
-        return parse_opencode_verbose(text);
-    }
     let mut models = Vec::new();
     let mut seen = HashSet::new();
     for line in text.lines() {
@@ -1098,50 +1160,6 @@ fn parse_opencode_models(text: &str) -> Vec<TranslationModel> {
         if let Some(id) = clean_model_id(line) {
             push_unique(&mut models, &mut seen, id);
         }
-        if models.len() >= MAX_MODELS {
-            break;
-        }
-    }
-    models
-}
-
-fn parse_opencode_verbose(text: &str) -> Vec<TranslationModel> {
-    let mut remaining = text.trim();
-    let mut models = Vec::new();
-    let mut seen = HashSet::new();
-    while let Some((line, rest)) = remaining.split_once('\n') {
-        remaining = rest.trim_start();
-        let Some(id) = clean_model_id(line).filter(|v| v.contains('/') && !v.contains(' ')) else {
-            continue;
-        };
-        let mut stream =
-            serde_json::Deserializer::from_str(remaining).into_iter::<serde_json::Value>();
-        let Some(Ok(value)) = stream.next() else {
-            continue;
-        };
-        remaining = remaining[stream.byte_offset()..].trim_start();
-        if !seen.insert(id.clone()) {
-            continue;
-        }
-        let efforts = value
-            .get("variants")
-            .and_then(|v| v.as_object())
-            .map(|variants| {
-                variants
-                    .iter()
-                    .filter(|(name, variant)| {
-                        valid_effort_token(name)
-                            && variant.get("disabled").and_then(|v| v.as_bool()) != Some(true)
-                    })
-                    .map(|(name, _)| name.clone())
-                    .collect()
-            });
-        models.push(TranslationModel {
-            label: id.clone(),
-            id,
-            detail: None,
-            reasoning_efforts: efforts,
-        });
         if models.len() >= MAX_MODELS {
             break;
         }
@@ -1437,29 +1455,32 @@ pub fn list_translation_models(
         }
         TranslationAgent::Cli(CliProviderId::Opencode) => {
             let binary = find_cli_or_unavailable(CliProviderId::Opencode)?;
-            // No `--refresh`: reads the local cache, so this stays offline.
-            match run_cli_output(&binary, &["models", "--verbose"], MODEL_LIST_TIMEOUT) {
-                Ok(output) if output.status.success() => {
-                    let models = parse_opencode_models(&String::from_utf8_lossy(&output.stdout));
-                    if models.is_empty() {
-                        Ok(TranslationModelList {
-                            agent: CliProviderId::Opencode.as_str().to_string(),
-                            source: "live".to_string(),
-                            models,
-                            message:
-                                "No models were listed. Configure a provider in the tool first."
-                                    .to_string(),
+            // OpenCode V2 dropped the `--verbose` flag and now serves the
+            // catalog from its local server. `opencode api` performs service
+            // discovery and authentication itself and never leaves the
+            // machine. The plain `models` listing stays as a fallback.
+            let catalog = run_cli_output(&binary, &["api", "model.list"], MODEL_LIST_TIMEOUT)
+                .ok()
+                .filter(|output| output.status.success())
+                .map(|output| parse_opencode_catalog(&String::from_utf8_lossy(&output.stdout)))
+                .filter(|models| !models.is_empty())
+                .or_else(|| {
+                    run_cli_output(&binary, &["models"], MODEL_LIST_TIMEOUT)
+                        .ok()
+                        .filter(|output| output.status.success())
+                        .map(|output| {
+                            parse_opencode_catalog(&String::from_utf8_lossy(&output.stdout))
                         })
-                    } else {
-                        Ok(TranslationModelList {
-                            agent: CliProviderId::Opencode.as_str().to_string(),
-                            source: "live".to_string(),
-                            models,
-                            message: "Live catalog from the OpenCode tool.".to_string(),
-                        })
-                    }
-                }
-                _ => Err(AppError::new(
+                        .filter(|models| !models.is_empty())
+                });
+            match catalog {
+                Some(models) => Ok(TranslationModelList {
+                    agent: CliProviderId::Opencode.as_str().to_string(),
+                    source: "live".to_string(),
+                    models,
+                    message: "Live catalog from the OpenCode tool.".to_string(),
+                }),
+                None => Err(AppError::new(
                     "models_unavailable",
                     "The model list could not be read from the tool.",
                 )),
@@ -1780,30 +1801,63 @@ mod tests {
     }
 
     #[test]
-    fn opencode_verbose_reads_variants_without_treating_json_urls_as_models() {
-        let models = parse_opencode_models(
-            r#"openai/example
-{
- "api": {"url":"https://example.invalid"},
- "variants": {"low":{}, "xhigh":{}, "hidden":{"disabled":true}}
-}
-opencode/no-adjustment
-{
- "variants": {}
-}
-"#,
+    fn opencode_catalog_reads_v2_provider_model_and_variants() {
+        let models = parse_opencode_catalog(
+            r#"{"location":{"directory":"/tmp"},"data":[
+                {"id":"example","modelID":"example","providerID":"openai","name":"Example Model",
+                 "settings":{"baseURL":"https://example.invalid"},
+                 "variants":[{"id":"low","settings":{"reasoningEffort":"low"}},
+                             {"id":"xhigh","settings":{"reasoningEffort":"xhigh"}}]},
+                {"id":"plain","modelID":"plain","providerID":"opencode","name":"Plain","variants":[]},
+                {"id":"skipped","providerID":"openai"}
+            ]}"#,
         );
         assert_eq!(models.len(), 2);
+        assert_eq!(models[0].id, "openai/example");
+        assert_eq!(models[0].label, "openai/example");
+        assert_eq!(models[0].detail.as_deref(), Some("Example Model"));
         assert_eq!(
             models[0].reasoning_efforts.as_ref().expect("variants"),
             &["low", "xhigh"]
         );
+        assert_eq!(models[1].id, "opencode/plain");
         assert!(
             models[1]
                 .reasoning_efforts
                 .as_ref()
                 .expect("empty variants")
                 .is_empty()
+        );
+    }
+
+    #[test]
+    fn opencode_catalog_falls_back_to_plain_provider_model_lines() {
+        let models = parse_opencode_catalog("anthropic/claude-sonnet-4-5\nopenai/gpt-5.2\n");
+        let ids: Vec<&str> = models.iter().map(|model| model.id.as_str()).collect();
+        assert_eq!(ids, vec!["anthropic/claude-sonnet-4-5", "openai/gpt-5.2"]);
+    }
+
+    #[test]
+    #[ignore = "explicit probe against the installed OpenCode CLI; reads the local catalog only"]
+    fn installed_opencode_lists_a_parsable_v2_catalog() {
+        let binary = find_cli_binary(crate::domain::CliProviderId::Opencode)
+            .expect("OpenCode CLI must be installed");
+        let output = run_cli_output(&binary, &["api", "model.list"], MODEL_LIST_TIMEOUT)
+            .expect("opencode api model.list");
+        assert!(output.status.success(), "opencode api model.list failed");
+        let models = parse_opencode_catalog(&String::from_utf8_lossy(&output.stdout));
+        assert!(!models.is_empty(), "no models parsed from the live catalog");
+        assert!(
+            models
+                .iter()
+                .all(|model| model.id.contains('/') && model.id.split('/').count() == 2),
+            "every model id must be provider/model: {:?}",
+            models.iter().map(|m| &m.id).collect::<Vec<_>>()
+        );
+        eprintln!(
+            "OpenCode live catalog: {} models, first {}",
+            models.len(),
+            models[0].id
         );
     }
 

@@ -190,6 +190,12 @@ fn qualify_unit(
 /// opened chapter. Re-collects from the immutable snapshot, keeps every unit
 /// id referenced by saved runs, and rewrites only rows whose content or
 /// verdict changed.
+///
+/// A validator upgrade can also change *which* node becomes a unit (for
+/// example a wrapper `<span>` is now kept inside its parent `<div>`). In that
+/// case the cached row is re-homed by unchanged order/kind/text so its saved
+/// proposals stay attached, and rows that no longer exist are removed only
+/// when no run item references them.
 fn refresh_cached_availability(
     data_dir: &Path,
     conn: &mut rusqlite::Connection,
@@ -207,30 +213,63 @@ fn refresh_cached_availability(
     let text = std::str::from_utf8(&bytes)
         .map_err(|_| AppError::new("invalid_epub", "The chapter is not UTF-8 XHTML."))?;
     let mut fresh = selection::collect(text)?;
+
+    // Exact locator matches keep their cached identity.
+    let mut claimed: HashSet<String> = HashSet::new();
     for unit in &mut fresh {
-        unit.id = repo::block_id(conn, chapter, &unit.locator)?.unwrap_or_else(|| {
-            saved
-                .iter()
-                .find(|kept| kept.locator == unit.locator)
-                .map(|kept| kept.id.clone())
-                .unwrap_or_else(|| uuid::Uuid::new_v4().to_string())
-        });
+        if let Some(kept) = saved.iter().find(|kept| kept.locator == unit.locator) {
+            unit.id = kept.id.clone();
+            claimed.insert(kept.id.clone());
+        }
+    }
+    // Re-home rows whose structural locator changed but whose content did
+    // not, instead of leaving an unavailable duplicate behind.
+    for unit in &mut fresh {
+        if unit.id.is_empty()
+            && let Some(kept) = saved.iter().find(|kept| {
+                !claimed.contains(&kept.id)
+                    && kept.order == unit.order
+                    && kept.kind == unit.kind
+                    && kept.text == unit.text
+            })
+        {
+            unit.id = kept.id.clone();
+            claimed.insert(kept.id.clone());
+        }
+    }
+    for unit in &mut fresh {
+        if unit.id.is_empty() {
+            unit.id = repo::block_id(conn, chapter, &unit.locator)?
+                .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+        }
         qualify_unit(&mut archive, &config.resource_href, unit)?;
     }
+
     let tx = crate::storage::begin_write(conn)?;
     for unit in &fresh {
-        let previous = saved.iter().find(|kept| kept.locator == unit.locator);
-        match previous {
+        match saved.iter().find(|kept| kept.id == unit.id) {
             Some(kept)
-                if kept.id == unit.id
+                if kept.locator == unit.locator
+                    && kept.order == unit.order
                     && kept.html == unit.html
-                    && kept.unavailable == unit.unavailable => {}
+                    && kept.unavailable == unit.unavailable =>
+            {
+                claimed.insert(kept.id.clone());
+            }
             Some(_) => {
-                repo::refresh_unit_data(&tx, chapter, unit)?;
+                repo::replace_unit(&tx, chapter, &config.fingerprint, unit)?;
+                claimed.insert(unit.id.clone());
             }
             None => {
                 repo::put_unit(&tx, chapter, &config.fingerprint, unit)?;
             }
+        }
+    }
+    // Drop leftovers that no longer correspond to source content. A row that
+    // already carries run items is kept so saved work is never silently lost.
+    for kept in &saved {
+        if !claimed.contains(&kept.id) {
+            repo::delete_unit_if_unreferenced(&tx, &kept.id)?;
         }
     }
     tx.commit()?;

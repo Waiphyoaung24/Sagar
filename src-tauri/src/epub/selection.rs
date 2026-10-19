@@ -51,6 +51,49 @@ fn opening(node: roxmltree::Node<'_, '_>, list_start: Option<i64>) -> String {
     value
 }
 
+/// Block children keep a container split into separate units. Inline-only
+/// containers (common in converted EPUBs) are paragraph-like and can be
+/// translated as one unit without losing their spans or loose text.
+fn is_selection_block(tag: &str) -> bool {
+    matches!(
+        tag,
+        "p" | "h1"
+            | "h2"
+            | "h3"
+            | "h4"
+            | "h5"
+            | "h6"
+            | "ul"
+            | "ol"
+            | "li"
+            | "blockquote"
+            | "hr"
+            | "table"
+            | "thead"
+            | "tbody"
+            | "tfoot"
+            | "tr"
+            | "td"
+            | "th"
+            | "caption"
+            | "div"
+            | "section"
+            | "hgroup"
+            | "article"
+            | "main"
+            | "header"
+            | "footer"
+            | "aside"
+            | "figure"
+            | "figcaption"
+            | "pre"
+            | "dl"
+            | "dt"
+            | "dd"
+            | "svg"
+    )
+}
+
 /// The caller assigns persisted identities after matching structural locators.
 pub fn collect(source: &str) -> Result<Vec<SourceUnit>, AppError> {
     let doc = super::xml::parse(source)
@@ -83,15 +126,24 @@ pub fn collect(source: &str) -> Result<Vec<SourceUnit>, AppError> {
         let loose = node
             .children()
             .any(|n| n.is_text() && !n.text().unwrap_or("").trim().is_empty());
+        let has_block_child = node
+            .children()
+            .filter(|n| n.is_element())
+            .any(|n| is_selection_block(n.tag_name().name()));
+        let has_text = node
+            .descendants()
+            .any(|n| n.is_text() && !n.text().unwrap_or("").trim().is_empty());
         let list_numbering_safe = tag != "ol"
             || node
                 .attribute("start")
                 .is_none_or(|start| start.parse::<i32>().is_ok());
+        // Text-bearing inline containers stay one unit; image-only wrappers
+        // still descend so their images keep the "image" kind.
         if is_container
             && list_numbering_safe
             && ancestors.len() < 30
             && !loose
-            && node.children().any(|n| n.is_element())
+            && (has_block_child || !has_text)
         {
             for (index, child) in node.children().filter(|n| n.is_element()).enumerate() {
                 let start = if tag == "ol" {
@@ -133,21 +185,26 @@ pub fn collect(source: &str) -> Result<Vec<SourceUnit>, AppError> {
             "figcaption" => "caption",
             _ => "paragraph",
         };
-        let supported = matches!(
+        let mixed_inline_container = matches!(
             tag,
-            "p" | "hgroup"
-                | "h1"
-                | "h2"
-                | "h3"
-                | "h4"
-                | "h5"
-                | "h6"
-                | "li"
-                | "figcaption"
-                | "table"
-                | "figure"
-                | "img"
-        );
+            "div" | "section" | "article" | "main" | "header" | "footer" | "aside" | "blockquote"
+        ) && !has_block_child;
+        let supported = mixed_inline_container
+            || matches!(
+                tag,
+                "p" | "hgroup"
+                    | "h1"
+                    | "h2"
+                    | "h3"
+                    | "h4"
+                    | "h5"
+                    | "h6"
+                    | "li"
+                    | "figcaption"
+                    | "table"
+                    | "figure"
+                    | "img"
+            );
         let raw = &source[node.range()];
         let mut contextual = raw.to_string();
         for ancestor in ancestors.iter().rev() {
@@ -541,10 +598,97 @@ mod tests {
 
     #[test]
     fn unsafe_or_unknown_structures_are_visible_and_unavailable() {
-        let source = "<html xmlns=\"http://www.w3.org/1999/xhtml\"><body><p onclick=\"bad()\">Text</p><pre>Code</pre><div>Loose <span>text</span></div></body></html>";
+        let source = "<html xmlns=\"http://www.w3.org/1999/xhtml\"><body><p onclick=\"bad()\">Text</p><pre>Code</pre><div>Loose <p>block</p></div></body></html>";
         let units = collect(source).expect("units");
         assert_eq!(units.len(), 3);
         assert!(units.iter().all(|u| u.unavailable.is_some()));
+    }
+
+    #[test]
+    fn mixed_inline_div_wrapper_is_selectable_as_one_paragraph() {
+        // Converted EPUBs often use a div with spans and loose text instead
+        // of a paragraph. It must stay one unit; splitting the spans would
+        // break the sentence.
+        let source = "<html xmlns=\"http://www.w3.org/1999/xhtml\"><body><div class=\"class24\"><span class=\"class25\">T</span><span class=\"class26\">HE BOY’S NAME WAS SANTIAGO. DUSK</span> was falling as the boy arrived with his herd at an abandoned church.</div></body></html>";
+        let units = collect(source).expect("units");
+        assert_eq!(units.len(), 1);
+        let unit = &units[0];
+        assert_eq!(unit.kind, "paragraph");
+        assert!(unit.unavailable.is_none(), "{:?}", unit.unavailable);
+        assert!(unit.html.starts_with("<div class=\"class24\">"));
+        assert!(unit.html.contains("<span class=\"class25\">T</span>"));
+        assert!(unit.html.contains("was falling as the boy arrived"));
+        let replacements: Vec<_> = parts(&unit.html, 4096)
+            .expect("parts")
+            .into_iter()
+            .map(|p| (p.node, p.start, p.end, "မြန်မာ".into()))
+            .collect();
+        let rebuilt = reconstruct(&unit.html, &replacements).expect("rebuild");
+        assert!(rebuilt.contains("မြန်မာ"));
+        assert!(!rebuilt.contains("was falling"));
+    }
+
+    #[test]
+    fn inline_only_div_without_loose_text_stays_one_unit() {
+        let source = "<html xmlns=\"http://www.w3.org/1999/xhtml\"><body><div><span>Hello </span><span>world</span></div></body></html>";
+        let units = collect(source).expect("units");
+        assert_eq!(units.len(), 1);
+        assert!(units[0].unavailable.is_none(), "{:?}", units[0].unavailable);
+        assert!(
+            units[0]
+                .html
+                .contains("<span>Hello </span><span>world</span>")
+        );
+    }
+
+    #[test]
+    fn single_span_div_wrapper_is_selectable() {
+        // Some converters wrap a whole paragraph in a single span instead of
+        // putting loose text directly in the div.
+        let source = "<html xmlns=\"http://www.w3.org/1999/xhtml\"><body><div class=\"class15\"><span class=\"class16\">He swept the floor with his jacket and lay down, using the book he had just finished reading as a pillow.</span></div></body></html>";
+        let units = collect(source).expect("units");
+        assert_eq!(units.len(), 1);
+        assert_eq!(units[0].kind, "paragraph");
+        assert!(units[0].unavailable.is_none(), "{:?}", units[0].unavailable);
+        assert!(units[0].html.starts_with("<div class=\"class15\">"));
+        assert!(units[0].html.contains("<span class=\"class16\">"));
+    }
+
+    #[test]
+    fn image_only_container_still_yields_an_image_unit() {
+        let source = "<html xmlns=\"http://www.w3.org/1999/xhtml\"><body><div><img src=\"images/a.png\" alt=\"A\"/></div></body></html>";
+        let units = collect(source).expect("units");
+        assert_eq!(units.len(), 1);
+        assert_eq!(units[0].kind, "image");
+        assert!(units[0].unavailable.is_none(), "{:?}", units[0].unavailable);
+        assert!(
+            units[0]
+                .html
+                .contains("<img src=\"images/a.png\" alt=\"A\"/>")
+        );
+    }
+
+    #[test]
+    fn ebook_line_breaking_wrapper_keeps_units_selectable() {
+        // The wrapper is preserved as an ancestor for every block. If its
+        // safe typography style is rejected, the whole chapter becomes
+        // unavailable even though each selected block is ordinary text.
+        let source = "<html xmlns=\"http://www.w3.org/1999/xhtml\"><head><title>T</title></head><body><div class=\"body s1\" style=\"white-space:pre-wrap; line-break:strict;\"><h1 style=\"margin:0\">Title</h1><p>Text</p><ol style=\"padding:0 0 0 1px; margin:0;\"><li>One</li></ol></div></body></html>";
+        let units = collect(source).expect("units");
+        assert_eq!(units.len(), 3);
+        assert!(
+            units.iter().all(|u| u.unavailable.is_none()),
+            "{:?}",
+            units
+                .iter()
+                .map(|u| (&u.kind, &u.unavailable))
+                .collect::<Vec<_>>()
+        );
+        assert!(
+            units[0].ancestors[0]
+                .opening
+                .contains("white-space:pre-wrap")
+        );
     }
 
     #[test]

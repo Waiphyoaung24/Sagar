@@ -108,17 +108,29 @@ pub fn put_unit(
     conn.execute("INSERT OR IGNORE INTO ai_selection_units(id,chapter_id,source_order,locator,fingerprint,data) VALUES(?1,?2,?3,?4,?5,?6)",params![unit.id,chapter,unit.order,unit.locator,fingerprint,json(unit)?])?;
     Ok(())
 }
-/// Rewrites a cached unit after re-validation (e.g. an older validator marked
-/// it unavailable and a newer one clears it). The row — and therefore the
-/// unit id referenced by saved runs — is preserved.
-pub fn refresh_unit_data(
+/// Re-homes a cached unit whose structural locator changed (for example when
+/// a validator upgrade merges wrapper spans into their parent div). Keeping
+/// the id means saved run items and proposals stay attached, so the unit is
+/// never silently orphaned.
+pub fn replace_unit(
     conn: &Connection,
     chapter: &str,
+    fingerprint: &str,
     unit: &SourceUnit,
 ) -> Result<(), AppError> {
     conn.execute(
-        "UPDATE ai_selection_units SET data=?1 WHERE chapter_id=?2 AND locator=?3",
-        params![json(unit)?, chapter, unit.locator],
+        "UPDATE ai_selection_units SET source_order=?1, locator=?2, fingerprint=?3, data=?4 WHERE id=?5 AND chapter_id=?6",
+        params![unit.order, unit.locator, fingerprint, json(unit)?, unit.id, chapter],
+    )?;
+    Ok(())
+}
+
+/// Removes a cached unit only when no saved run item references it. Units that
+/// already carry translation work are kept even if their locator disappeared.
+pub fn delete_unit_if_unreferenced(conn: &Connection, unit_id: &str) -> Result<(), AppError> {
+    conn.execute(
+        "DELETE FROM ai_selection_units WHERE id=?1 AND NOT EXISTS (SELECT 1 FROM ai_selection_items WHERE unit_id=?1)",
+        [unit_id],
     )?;
     Ok(())
 }

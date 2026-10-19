@@ -707,6 +707,10 @@ impl ProviderJsonStream {
                 _ => {}
             },
             CliProviderId::Opencode => match kind {
+                // OpenCode V2 dropped the `step_finish` event, so this branch
+                // only understands the V1 fixture shape. Production never
+                // reaches it: OpenCode runs through `opencode_stream::run`,
+                // which speaks the V2 session and event API.
                 "text" => {
                     if let Some(text) = value["part"]["text"].as_str() {
                         let key = value["part"]["id"].as_str().unwrap_or("text");

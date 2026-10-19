@@ -83,7 +83,7 @@ test("Borderless verse tables keep styles and EPUB semantics through typing and 
     });
     editor.commands.insertContentAt(firstText, "မင်္ဂလာပါ ");
     const saved = documentFragment(editor.getHTML());
-    expect(saved).toMatch(/style="border: 0(?:px)?;"/);
+    expect(saved).toMatch(/style="border: 0(?:px)?; ?"/);
     expect(saved).toContain('class="simplelist"');
     expect(saved).toContain('epub:type="list"');
     expect(saved).toContain("မင်္ဂလာပါ ");
@@ -95,6 +95,27 @@ test("Borderless verse tables keep styles and EPUB semantics through typing and 
     editor.commands.setTextSelection(firstText);
     expect(editor.commands.addRowAfter()).toBe(true);
     expect(editor.view.dom.querySelector("table[data-book-borderless]")).not.toBeNull();
+  } finally { editor.destroy(); }
+});
+
+test("Imported inline styles stay inert in the Rich editor and save verbatim", () => {
+  const html = '<div class="body s1" style="white-space:pre-wrap; line-break:strict;"><p style="margin:0; color:red">Text</p></div>';
+  const editor = createEditor(html);
+  try {
+    expect(editor.view.dom.querySelector("[style]")).toBeNull();
+    expect(
+      editor.view.dom.querySelector("div")?.getAttribute("data-book-style"),
+    ).toBe("white-space:pre-wrap; line-break:strict;");
+    expect(editor.view.dom.querySelector("p")?.getAttribute("data-book-style")).toBe(
+      "margin:0; color:red",
+    );
+    const saved = documentFragment(editor.getHTML());
+    expect(saved).toContain('style="white-space:pre-wrap; line-break:strict;"');
+    expect(saved).toContain('style="margin:0; color:red"');
+    expect(saved).not.toContain("data-book-style");
+    expect(comparableDocument(editor.getHTML())).toBe(comparableDocument(html));
+    editor.commands.setContent(saved, { parseOptions: { preserveWhitespace: true } });
+    expect(comparableDocument(editor.getHTML())).toBe(comparableDocument(saved));
   } finally { editor.destroy(); }
 });
 

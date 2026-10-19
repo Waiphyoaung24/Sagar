@@ -87,7 +87,6 @@ export const BookAttributes = Extension.create({
             [
               "class",
               "id",
-              "style",
               "title",
               "lang",
               "dir",
@@ -108,6 +107,18 @@ export const BookAttributes = Extension.create({
               },
             ]),
           ),
+          // Keep imported inline CSS for export, but never apply it to the
+          // editing surface: arbitrary book styles can hide text, change
+          // layout or load resources. The serializer restores `style`.
+          bookStyle: {
+            default: null,
+            parseHTML: (element: HTMLElement) =>
+              element.getAttribute("style") ?? element.getAttribute("data-book-style"),
+            renderHTML: (attributes: Record<string, unknown>) =>
+              typeof attributes.bookStyle === "string"
+                ? { "data-book-style": attributes.bookStyle }
+                : {},
+          },
         },
       },
       {

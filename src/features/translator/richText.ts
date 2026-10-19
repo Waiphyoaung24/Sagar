@@ -212,10 +212,20 @@ export function documentFragment(html: string): string {
         name.startsWith("aria-"),
       ),
     );
-    const attributes = names
-      .filter((name) => node.hasAttribute(name))
-      .map((name) => ` ${name}="${plainFragment(node.getAttribute(name) ?? "")}"`)
-      .join("");
+    const values = new Map<string, string>();
+    for (const name of names) {
+      // The rich editor stores imported CSS under data-book-style so the
+      // browser does not apply it. Saved/exported XHTML restores `style`.
+      const value =
+        name === "style"
+          ? (node.getAttribute("style") ?? node.getAttribute("data-book-style"))
+          : node.getAttribute(name);
+      if (value !== null) values.set(name, value);
+    }
+    const attributes = Array.from(
+      values,
+      ([name, value]) => ` ${name}="${plainFragment(value)}"`,
+    ).join("");
     if (
       [
         "br",
@@ -333,6 +343,13 @@ export function normalizeRichDocument(html: string): string {
 /** Compare structural content without code indentation between block elements. */
 export function comparableDocument(html: string): string {
   const document = new DOMParser().parseFromString(html, "text/html");
+  // Rich-editor DOMs keep imported CSS inert under data-book-style; compare
+  // them as the `style` attribute that documentFragment saves and exports.
+  for (const element of document.querySelectorAll("[data-book-style]")) {
+    if (!element.hasAttribute("style"))
+      element.setAttribute("style", element.getAttribute("data-book-style") ?? "");
+    element.removeAttribute("data-book-style");
+  }
   for (const element of document.querySelectorAll("[style]")) {
     if (element instanceof HTMLElement)
       element.setAttribute("style", element.style.cssText);
