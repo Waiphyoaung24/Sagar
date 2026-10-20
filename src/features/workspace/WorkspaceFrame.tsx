@@ -24,6 +24,7 @@ import { ChapterPicker } from "../chapters/ChapterPicker";
 import { ChapterSidebar } from "../chapters/ChapterSidebar";
 import { ExportDialog } from "../export/ExportDialog";
 import { SourcePane } from "../reader/SourcePane";
+import { AiBackgroundBar } from "../translator/AiBackgroundBar";
 import { TargetPane } from "../translator/TargetPane";
 import { useChapterEditor } from "../translator/useChapterEditor";
 import { BookSettingsDialog } from "./BookSettingsDialog";
@@ -76,6 +77,7 @@ export function WorkspaceFrame({
   const [exportOutcome, setExportOutcome] = useState<ExportOutcome | null>(null);
   const [langOpen, setLangOpen] = useState(false);
   const [bookSettingsOpen, setBookSettingsOpen] = useState(false);
+  const [aiChapterId, setAiChapterId] = useState<string | null>(null);
   const readingRef = useRef<HTMLDivElement>(null);
   const loadSequence = useRef(0);
   const contentRef = useRef<ChapterContent | null>(null);
@@ -179,6 +181,28 @@ export function WorkspaceFrame({
       loadChapter(activeChapterId);
     }
   }, [activeChapterId, loadChapter]);
+
+  // The AI dialog follows the active chapter; opening it for another chapter
+  // switches to that chapter first.
+  const openAiForChapter = useCallback(
+    (chapterId: string) => {
+      if (chapterId === activeChapterId) {
+        setAiChapterId(chapterId);
+        return;
+      }
+      void editor.flushAll().then((ok) => {
+        if (!ok) return;
+        setActiveChapterId(chapterId);
+        loadChapter(chapterId);
+        setAiChapterId(chapterId);
+      });
+    },
+    [activeChapterId, editor, loadChapter],
+  );
+
+  useEffect(() => {
+    if (aiChapterId && aiChapterId !== activeChapterId) setAiChapterId(null);
+  }, [activeChapterId, aiChapterId]);
 
   // Cmd/Ctrl+S flushes pending saves and shows the real result.
   useEffect(() => {
@@ -343,6 +367,8 @@ export function WorkspaceFrame({
         </div>
       ) : null}
 
+      <AiBackgroundBar onOpenChapter={openAiForChapter} />
+
       {warningsVisible && importWarnings.length > 0 ? (
         <section className="panel workspace__warnings" aria-label={t("Import notes")}>
           <div className="panel__header">
@@ -430,6 +456,11 @@ export function WorkspaceFrame({
             onReloadAfterConflict={reloadAfterConflict}
             editor={editor}
             scrollRef={targetScrollRef}
+            aiOpen={aiChapterId !== null && aiChapterId === content?.chapterId}
+            onOpenAi={() => {
+              if (content) setAiChapterId(content.chapterId);
+            }}
+            onCloseAi={() => setAiChapterId(null)}
           />
         </div>
       </div>

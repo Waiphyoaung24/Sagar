@@ -55,6 +55,7 @@ const paths = {
     "M3 4h6v16H3V4ZM15 4h6v16h-6V4ZM12 7v10M12 7L10 9M12 7l2 2M12 17l-2-2M12 17l2-2",
   refresh:
     "M23 4v6h-6M1 20v-6h6M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15",
+  minimize: "M4 4h16v3H4V4Zm4 6h8v6H8v-6Zm-4 6h16v4H4v-4Z",
 } as const;
 export type IconName = keyof typeof paths;
 export function Icon({

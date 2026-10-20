@@ -378,10 +378,9 @@ export const mnw: Record<string, string> = {
   "Live progress is unavailable. If a run never finishes, close and reopen this dialog — your draft is untouched.":
     "အဆံၚ်မကၠောန်လၟုဟ် ဟွံဂွံ။ ယဝ်အကြိမ်မွဲ ဟွံတုဲမ္ဂး ကၟာတ်တုဲ ကလေၚ်ပံက်ဒိုင်ယာလော့ခ်ဏအ် — မူပထမမၞး ဟွံပြံၚ်လှာဲ။",
   "Translating… (": "ကၠာဲဘာသာမံၚ်… (",
-  "s elapsed — this can take up to 30 minutes)": "စက္ကန်ကၠောံတုဲ — ကြာမာန် စဵုကဵု 30 မိနစ်)",
+  "elapsed — this can take up to 30 minutes)": "ကြာမာန် စဵုကဵု 30 မိနစ်)",
   "No answer text for": "လိက်သွဟ် ဟွံဂွံသွက်",
-  "s. Your draft is safe. You can wait or Cancel.":
-    "စက္ကန်ရ။ မူပထမမၞး ဂီုကၠီုရ။ မၚ် ဟွံသေၚ်မ္ဂး တးပဲါမာန်။",
+  ". Your draft is safe. You can wait or Cancel.": "ရ။ မူပထမမၞး ဂီုကၠီုရ။ မၚ် ဟွံသေၚ်မ္ဂး တးပဲါမာန်။",
   "Live translation output": "ရလဒ်ကၠာဲဘာသာ လၟုဟ်",
   "AI proposal preview": "ဗီုနမူနာတၚ်အဆိုပြု AI",
   "Your current draft has content. Inserting replaces it (kept as an unreviewed draft, never marked reviewed).":

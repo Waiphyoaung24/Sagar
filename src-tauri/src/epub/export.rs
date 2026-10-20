@@ -186,6 +186,23 @@ pub fn validate_output(path: &Path) -> Result<Vec<ImportWarning>, AppError> {
     Ok(warnings)
 }
 
+fn unusable_translation_warning(resource_href: &str) -> ImportWarning {
+    ImportWarning {
+        code: "chapter_translation_unusable".into(),
+        message: "A translated chapter contains HTML or an image that could not \
+                  be exported safely and keeps its original text. Fix the \
+                  chapter's HTML or image before exporting it again."
+            .into(),
+        location: Some(
+            resource_href
+                .rsplit('/')
+                .next()
+                .unwrap_or(resource_href)
+                .to_string(),
+        ),
+    }
+}
+
 /// Patches one chapter resource with its translated blocks. Returns the
 /// patched bytes (or the original on skip), plus warnings.
 fn patched_chapter(
@@ -199,7 +216,14 @@ fn patched_chapter(
         .find(|block| block.structural_locator == "__chapter_document__")
     {
         return match &document.target_fragment {
-            Some(html) => Ok((replace_chapter_body(&original, html)?, Vec::new())),
+            // A free-form chapter may contain HTML the exporter cannot splice
+            // (for example unclosed elements or an HTML-only entity). Keep the
+            // original chapter and report it instead of aborting the whole
+            // export; the draft itself remains saved.
+            Some(html) => match replace_chapter_body(&original, html) {
+                Ok(bytes) => Ok((bytes, Vec::new())),
+                Err(_) => Ok((original, vec![unusable_translation_warning(resource_href)])),
+            },
             None => Ok((original, Vec::new())),
         };
     }
@@ -310,16 +334,35 @@ pub fn run_export(input: ExportInput) -> Result<ExportOutcome, AppError> {
             continue;
         }
         included_count += 1;
+        let mut chapter_images = HashMap::new();
+        let mut packaged = true;
         for block in &mut blocks {
             if let Some(fragment) = &block.target_fragment {
-                block.target_fragment = Some(package_images(
+                match package_images(
                     fragment,
                     resource_href,
                     &opf_path,
                     &snapshot,
-                    &mut added_images,
-                )?);
+                    &mut chapter_images,
+                ) {
+                    Ok(images) => block.target_fragment = Some(images),
+                    Err(_) => {
+                        packaged = false;
+                        break;
+                    }
+                }
             }
+        }
+        if packaged {
+            added_images.extend(chapter_images);
+        } else {
+            // One unusable fragment makes the whole chapter unsafe to splice.
+            // Keep its original text and surface a warning instead of failing
+            // the entire book export.
+            for block in &mut blocks {
+                block.target_fragment = None;
+            }
+            warnings.push(unusable_translation_warning(resource_href));
         }
         let heading_label = blocks.iter().find_map(|block| {
             let fragment = block.target_fragment.as_ref()?;

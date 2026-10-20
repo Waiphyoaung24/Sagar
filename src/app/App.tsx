@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { LibraryScreen } from "../features/library/LibraryScreen";
+import { AiJobsProvider } from "../features/translator/aiJobs";
 import { WorkspaceFrame } from "../features/workspace/WorkspaceFrame";
 import { useTranslation } from "../lib/i18n";
 import {
@@ -101,11 +102,13 @@ export default function App() {
 
   if (openProject) {
     return (
-      <WorkspaceFrame
-        projectId={openProject.projectId}
-        importWarnings={openProject.importWarnings}
-        onBackToLibrary={() => setOpenProject(null)}
-      />
+      <AiJobsProvider>
+        <WorkspaceFrame
+          projectId={openProject.projectId}
+          importWarnings={openProject.importWarnings}
+          onBackToLibrary={() => setOpenProject(null)}
+        />
+      </AiJobsProvider>
     );
   }
   return (

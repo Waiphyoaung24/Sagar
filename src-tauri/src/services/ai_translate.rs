@@ -967,8 +967,10 @@ fn normalize_trailing_rules(fragment: &str) -> Result<String, AppError> {
     Ok(normalized)
 }
 
-/// Validates raw tool output as chapter HTML. Rejects empty, oversized and
-/// non-conforming proposals so nothing unsafe reaches the draft.
+/// Validates raw tool output as chapter HTML. Empty, oversized and active
+/// content is rejected; unsupported or malformed markup is accepted and kept
+/// exactly as returned so a completed translation is never lost to Rich
+/// editor formatting limits.
 fn validate_proposal(raw: &[u8]) -> Result<String, AppError> {
     if raw.len() > MAX_OUTPUT_BYTES {
         return Err(AppError::new(
@@ -988,17 +990,20 @@ fn validate_proposal(raw: &[u8]) -> Result<String, AppError> {
             "The tool returned no translation. Nothing was inserted.",
         ));
     }
-    let normalized = normalize_trailing_rules(text)?;
-    let (html, plain) =
-        crate::epub::rich_text::validate_document(&normalized).map_err(|error| {
-            AppError::new(
-                "proposal_invalid",
-                format!(
-                    "The proposal could not be validated: {} Nothing was inserted.",
-                    error.message
-                ),
-            )
-        })?;
+    // Trailing-rule repair only applies to well-formed markup. When it cannot
+    // parse, keep the tool's output unchanged and let the permissive
+    // acceptance path store it; export falls back to the original chapter
+    // with a warning if it still cannot be spliced.
+    let normalized = normalize_trailing_rules(text).unwrap_or_else(|_| text.to_string());
+    let (html, plain) = crate::epub::rich_text::accept_document(&normalized).map_err(|error| {
+        AppError::new(
+            "proposal_invalid",
+            format!(
+                "The proposal could not be used: {} Nothing was inserted.",
+                error.message
+            ),
+        )
+    })?;
     if plain.trim().is_empty() {
         return Err(AppError::new(
             "proposal_empty",
@@ -1362,7 +1367,9 @@ where
                 })
         }
         .and_then(|proposal| {
-            check_skeleton(&body_html, &proposal)?;
+            // Structural differences are no longer a failure: the provider
+            // completed, so the returned HTML is inserted as-is. Smoothing is
+            // still available through Retry and AI Fix HTML.
             Ok(embed_proposal_images(
                 &proposal,
                 &snapshot_abs,
@@ -1844,14 +1851,25 @@ mod tests {
     }
 
     #[test]
-    fn rule_repair_preserves_multiple_rules_and_rejects_other_invalid_nesting() {
+    fn rule_repair_preserves_multiple_rules_and_permissive_acceptance_keeps_other_nesting() {
         let fragment = "<p id=\"note\">Text<hr class=\"divider\"/> \n<hr/></p>";
         assert_eq!(
             normalize_trailing_rules(fragment).expect("normalize"),
             "<p id=\"note\">Text</p><hr class=\"divider\"/> \n<hr/>"
         );
-        assert!(validate_proposal(b"<p>Before<hr/>After</p>").is_err());
-        assert!(validate_proposal(b"<p>Text<div>Block</div></p>").is_err());
+        // Completed provider output is kept even when Rich text cannot
+        // represent its nesting; only active content is rejected.
+        for accepted in [
+            "<p>Before<hr/>After</p>",
+            "<p>Text<div>Block</div></p>",
+            "<p><font color=\"red\">Text</font></p>",
+            "<p><a href=\"\">Text</a></p>",
+        ] {
+            assert_eq!(
+                validate_proposal(accepted.as_bytes()).expect(accepted),
+                accepted
+            );
+        }
         assert!(validate_proposal(b"<p>Text<hr onclick=\"alert(1)\"/></p>").is_err());
         assert!(
             check_skeleton(
@@ -1860,6 +1878,16 @@ mod tests {
             )
             .is_err()
         );
+    }
+
+    #[test]
+    fn completed_proposal_with_malformed_markup_is_kept_for_the_html_draft() {
+        let proposal = "<p>မြန်မာ <em>unfinished";
+        assert_eq!(
+            validate_proposal(proposal.as_bytes()).expect("kept verbatim"),
+            proposal
+        );
+        assert!(validate_proposal(b"<p>Bad <script>alert(1)</script>").is_err());
     }
 
     #[test]

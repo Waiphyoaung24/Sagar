@@ -381,10 +381,10 @@ export const shn: Record<string, string> = {
   "Live progress is unavailable. If a run never finishes, close and reopen this dialog — your draft is untouched.":
     "ဢမ်ႇၼႄလွင်ႈၶိုပ်ႈၼႃႈယၢမ်းလဵဝ်လႆႈ။ သင်ဝႃႈၵၢၼ်ႁဵတ်းဢမ်ႇသုတ်း ႁႂ်ႈပိၵ်ႉလႄႈပိုတ်ႇၼႃႈတၢင်ႇၼႆႉၶိုၼ်း — လိၵ်ႈၶၢမ်းဢမ်ႇလႅၵ်ႈလၢႆႈ။",
   "Translating… (": "တိုၵ်ႉပိၼ်ႇၽႃႇသႃႇ… (",
-  "s elapsed — this can take up to 30 minutes)": "ဝိၼႃႇထီႇပူၼ်ႉမႃး — ၸၢင်ႈႁိုင်တေႃႇ 30 မိၼိတ်ႉ)",
+  "elapsed — this can take up to 30 minutes)": " — ၸၢင်ႈႁိုင်တေႃႇ 30 မိၼိတ်ႉ)",
   "No answer text for": "ဢမ်ႇမီးၶေႃႈတွပ်ႇမႃးတႃႇ",
-  "s. Your draft is safe. You can wait or Cancel.":
-    "ဝိၼႃႇထီႇယဝ်ႉ။ လိၵ်ႈၶၢမ်းၸဝ်ႈၵဝ်ႇ လွတ်ႈၽေးဝႆႉ။ ပႂ်ႉလႆႈ ဢမ်ႇၼၼ် ယႃႉၶိုၼ်းလႆႈ။",
+  ". Your draft is safe. You can wait or Cancel.":
+    "။ လိၵ်ႈၶၢမ်းၸဝ်ႈၵဝ်ႇ လွတ်ႈၽေးဝႆႉ။ ပႂ်ႉလႆႈ ဢမ်ႇၼၼ် ယႃႉၶိုၼ်းလႆႈ။",
   "Live translation output": "ၶေႃႈတွပ်ႇပိၼ်ႇၽႃႇသႃႇယၢမ်းလဵဝ်",
   "AI proposal preview": "တူဝ်ယၢင်ႇၶေႃႈသၼေႃး AI",
   "Your current draft has content. Inserting replaces it (kept as an unreviewed draft, never marked reviewed).":

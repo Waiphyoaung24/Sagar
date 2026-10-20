@@ -66,6 +66,9 @@ function Harness({ proposal, chapterId = "ch1" }: { proposal: string | null; cha
     onRetry: () => {},
     onReloadAfterConflict: () => {},
     editor,
+    aiOpen: false,
+    onOpenAi: () => {},
+    onCloseAi: () => {},
   });
 }
 

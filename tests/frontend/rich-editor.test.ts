@@ -5,7 +5,7 @@ import StarterKit from "@tiptap/starter-kit";
 import { DOMParser as ProseMirrorParser } from "@tiptap/pm/model";
 import { BookAnchor } from "../../src/features/translator/bookAnchor";
 import { BookAttributes } from "../../src/features/translator/bookAttributes";
-import { comparableDocument, documentFragment } from "../../src/features/translator/richText";
+import { comparableDocument, documentFragment, sanitizePreviewHtml } from "../../src/features/translator/richText";
 
 const window = new Window();
 Object.assign(globalThis, {
@@ -51,4 +51,29 @@ test("Rich editing retains EPUB anchors, Myanmar text, links and trailing spaces
   } finally {
     editor.destroy();
   }
+});
+
+test("AI proposal preview keeps unsupported markup but removes active content", () => {
+  const html = [
+    '<p><font color="red">မြန်မာ</font>',
+    '<a href="javascript:alert(1)" onclick="bad()">link</a>',
+    '<a href="#note">note</a>',
+    '<img src="data:image/png;base64,AA" onerror="bad()"/>',
+    '<span style="position:fixed">styled</span>',
+    "<script>bad()</script>",
+    '<iframe src="https://example.com"></iframe>',
+    "</p>",
+  ].join("");
+  const safe = sanitizePreviewHtml(html);
+  expect(safe).toContain("<font");
+  expect(safe).toContain("မြန်မာ");
+  expect(safe).toContain("link");
+  expect(safe).toContain('href="#note"');
+  expect(safe).toContain("data:image/png;base64,AA");
+  expect(safe).not.toContain("javascript:");
+  expect(safe).not.toContain("onclick");
+  expect(safe).not.toContain("onerror");
+  expect(safe).not.toContain("position:fixed");
+  expect(safe).not.toContain("<script");
+  expect(safe).not.toContain("<iframe");
 });

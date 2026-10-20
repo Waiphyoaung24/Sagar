@@ -340,6 +340,122 @@ export function normalizeRichDocument(html: string): string {
   return documentFragment(doc.body.innerHTML);
 }
 
+/** Elements that must never render inside an AI proposal preview. */
+const PREVIEW_REMOVED_TAGS = new Set([
+  "script",
+  "style",
+  "iframe",
+  "frame",
+  "frameset",
+  "object",
+  "embed",
+  "applet",
+  "base",
+  "link",
+  "meta",
+  "noscript",
+  "template",
+  "form",
+  "input",
+  "button",
+  "select",
+  "textarea",
+  "option",
+  "optgroup",
+  "audio",
+  "video",
+  "track",
+  "foreignobject",
+  "use",
+  "animate",
+  "animatemotion",
+  "animatetransform",
+  "set",
+]);
+
+const PREVIEW_URL_ATTRS = new Set([
+  "href",
+  "xlink:href",
+  "src",
+  "poster",
+  "action",
+  "formaction",
+  "data",
+]);
+
+function previewUrlIsSafe(name: string, value: string): boolean {
+  // Browsers ignore embedded whitespace/control characters in schemes.
+  const normalized = Array.from(value.toLowerCase())
+    .filter((character) => {
+      const code = character.charCodeAt(0);
+      return code > 0x20 && code !== 0x7f;
+    })
+    .join("");
+  if (normalized.startsWith("javascript:") || normalized.startsWith("vbscript:"))
+    return false;
+  if (normalized.startsWith("data:")) {
+    return (
+      (name === "src" || name === "xlink:href") && normalized.startsWith("data:image/")
+    );
+  }
+  if (name === "href" || name === "xlink:href") {
+    // Only in-page anchors are safe; anything else could navigate the app.
+    return normalized.startsWith("#");
+  }
+  if (name === "src" || name === "poster") {
+    // Never let the preview fetch the network. Book-relative paths are inert.
+    return (
+      !normalized.startsWith("http:") &&
+      !normalized.startsWith("https:") &&
+      !normalized.startsWith("//")
+    );
+  }
+  return false;
+}
+
+/**
+ * Scrub AI-generated HTML before it is shown in the proposal preview. The raw
+ * result is still inserted into the HTML draft on confirmation; this function
+ * only protects the rendered preview, which may contain arbitrary unsupported
+ * or malformed markup. Scripts, embedded browsing contexts, event handlers,
+ * network fetches and active CSS are removed while ordinary tags and text stay
+ * visible so the user can review what will be inserted.
+ */
+export function sanitizePreviewHtml(html: string): string {
+  const doc = new DOMParser().parseFromString(html, "text/html");
+  for (const element of Array.from(doc.body.querySelectorAll("*"))) {
+    const tag = element.tagName.toLowerCase();
+    if (PREVIEW_REMOVED_TAGS.has(tag)) {
+      element.remove();
+      continue;
+    }
+    for (const attribute of Array.from(element.attributes)) {
+      const name = attribute.name.toLowerCase();
+      if (
+        name.startsWith("on") ||
+        name === "srcdoc" ||
+        name === "style" ||
+        name === "srcset" ||
+        name === "sizes"
+      ) {
+        element.removeAttribute(attribute.name);
+        continue;
+      }
+      if (PREVIEW_URL_ATTRS.has(name) && !previewUrlIsSafe(name, attribute.value)) {
+        element.removeAttribute(attribute.name);
+        continue;
+      }
+      if (
+        ["fill", "stroke", "filter", "clip-path", "mask"].includes(name) &&
+        /url\s*\(/i.test(attribute.value)
+      ) {
+        element.removeAttribute(attribute.name);
+      }
+    }
+  }
+  return doc.body.innerHTML;
+}
+
 /** Compare structural content without code indentation between block elements. */
 export function comparableDocument(html: string): string {
   const document = new DOMParser().parseFromString(html, "text/html");

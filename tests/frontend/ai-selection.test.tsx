@@ -158,7 +158,7 @@ test("Whole chapter stays default; selected text and images preview before an ex
   } finally { await act(async () => root.unmount()); container.remove(); }
 });
 
-test("active selections lock the mode and ignore stale events; close cancels the owned run", async () => {
+test("active selections lock the mode and ignore stale events; close keeps the owned run alive", async () => {
   reset(); generationMode = "running"; const { container, root } = await mount();
   try {
     await click(container, "Selected paragraphs");
@@ -171,7 +171,8 @@ test("active selections lock the mode and ignore stale events; close cancels the
     await act(async () => receive({ payload: event("stream", { partialText: "<p>မြန်မာ</p>" }) }));
     expect(container.querySelector<HTMLTextAreaElement>('[aria-label="Selected translation live output"]')?.value).toContain("မြန်မာ");
   } finally { await act(async () => root.unmount()); container.remove(); }
-  expect(commands.some((c) => c.command === "control_ai_selection_run" && c.args?.action === "cancel")).toBe(true);
+  // Closing the dialog moves the run to the background instead of cancelling it.
+  expect(commands.some((c) => c.command === "control_ai_selection_run" && c.args?.action === "cancel")).toBe(false);
 });
 
 test("relative images use local native URLs without allowing external fetches", () => {
@@ -179,7 +180,7 @@ test("relative images use local native URLs without allowing external fetches", 
   for (const value of ["https://example.com/a.png", "//example.com/a.png", "javascript:bad()", "\\remote\\a.png", "data:image/svg+xml,<svg/>"]) expect(bookImageUrl(value, "epubres://p/ch.xhtml")).toBeNull();
 });
 
-test("closing while a start command is pending cancels again after that command returns", async () => {
+test("closing while a start command is pending keeps the run in the background", async () => {
   reset(); generationMode = "running"; deferStart = true;
   const { container, root } = await mount();
   await click(container, "Selected paragraphs"); await click(container, "Select all available");
@@ -188,7 +189,8 @@ test("closing while a start command is pending cancels again after that command 
   expect(releaseStart).not.toBeNull();
   await act(async () => root.unmount());
   await act(async () => { releaseStart?.(); });
-  expect(commands.filter((c) => c.command === "control_ai_selection_run" && c.args?.action === "cancel").length).toBe(2);
+  // The run started before the dialog closed keeps working; it is not cancelled.
+  expect(commands.filter((c) => c.command === "control_ai_selection_run" && c.args?.action === "cancel").length).toBe(0);
   container.remove();
 });
 

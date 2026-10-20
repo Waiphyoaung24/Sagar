@@ -380,10 +380,10 @@ export const my: Record<string, string> = {
   "Live progress is unavailable. If a run never finishes, close and reopen this dialog — your draft is untouched.":
     "လက်ရှိပြီးစီးမှု မရနိုင်ပါ။ လုပ်ဆောင်မှု မပြီးစီးလျှင် ဤဝင်းဒိုးကို ပိတ်ပြီး ပြန်ဖွင့်ပါ။ မူကြမ်းကို မပြောင်းလဲပါ။",
   "Translating… (": "ဘာသာပြန်နေသည်… (",
-  "s elapsed — this can take up to 30 minutes)": "စက္ကန့် ကြာပြီ — မိနစ် ၃၀ အထိ ကြာနိုင်ပါသည်)",
+  "elapsed — this can take up to 30 minutes)": "ကြာပြီ — မိနစ် ၃၀ အထိ ကြာနိုင်ပါသည်)",
   "No answer text for": "အဖြေစာသား မရသည်မှာ",
-  "s. Your draft is safe. You can wait or Cancel.":
-    "စက္ကန့် ရှိပြီ။ မူကြမ်း လုံခြုံပါသည်။ စောင့်နိုင်သည် သို့မဟုတ် ပယ်ဖျက်နိုင်သည်။",
+  ". Your draft is safe. You can wait or Cancel.":
+    "ရှိပြီ။ မူကြမ်း လုံခြုံပါသည်။ စောင့်နိုင်သည် သို့မဟုတ် ပယ်ဖျက်နိုင်သည်။",
   "Live translation output": "လက်ရှိ ဘာသာပြန် ရလဒ်",
   "AI proposal preview": "AI အဆိုပြုချက် နမူနာ",
   "Your current draft has content. Inserting replaces it (kept as an unreviewed draft, never marked reviewed).":

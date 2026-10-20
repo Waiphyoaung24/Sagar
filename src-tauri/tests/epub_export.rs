@@ -1001,6 +1001,157 @@ fn borderless_table_styles_save_export_and_reopen() {
 }
 
 #[test]
+fn unsupported_chapter_html_with_empty_link_saves_reloads_and_exports() {
+    let dir = tempdir();
+    let data_dir = tempdir();
+    let files = rich_book_files();
+    let refs: Vec<(&str, &[u8])> = files
+        .iter()
+        .map(|(name, bytes)| (name.as_str(), bytes.as_slice()))
+        .collect();
+    let source = write_epub(&dir, "source.epub", &refs);
+    let original = std::fs::read(&source).expect("source");
+    let book = import_rich_book(&data_dir, &source);
+    let html = "<h1>ခေါင်းစဉ်</h1><p><font color=\"red\">မြန်မာ</font><a href=\"\">လင့်</a></p><center><p>Centered</p></center>";
+    services::workspace::save_chapter_document(
+        &data_dir,
+        &book.chapter_ids[0],
+        Some(html.into()),
+        "draft",
+        0,
+    )
+    .expect("unsupported HTML is kept");
+    let loaded =
+        services::workspace::get_chapter(&data_dir, &book.project_id, &book.chapter_ids[0])
+            .expect("reload");
+    assert_eq!(loaded.document.html.as_deref(), Some(html));
+
+    let destination = dir.join("permissive.epub");
+    services::export::export_epub(
+        &data_dir,
+        ExportRequest {
+            project_id: book.project_id,
+            destination: destination.clone(),
+            mode: "draft".into(),
+            title: None,
+            language: None,
+            include_original: true,
+        },
+    )
+    .expect("export permissive HTML");
+    let mut archive =
+        zip::ZipArchive::new(std::fs::File::open(&destination).expect("file")).expect("zip");
+    let mut output = String::new();
+    archive
+        .by_name("OEBPS/ch1.xhtml")
+        .expect("chapter")
+        .read_to_string(&mut output)
+        .expect("read");
+    assert!(
+        output.contains("<font color=\"red\">မြန်မာ</font>"),
+        "{output}"
+    );
+    assert!(output.contains("<a href=\"\">လင့်</a>"), "{output}");
+    assert!(output.contains("<center>"), "{output}");
+    epub::inspect(&destination).expect("reopen");
+    assert_eq!(std::fs::read(&source).expect("unchanged source"), original);
+}
+
+#[test]
+fn malformed_or_invalid_image_chapter_exports_original_with_warning() {
+    let dir = tempdir();
+    let data_dir = tempdir();
+    let files = rich_book_files();
+    let refs: Vec<(&str, &[u8])> = files
+        .iter()
+        .map(|(name, bytes)| (name.as_str(), bytes.as_slice()))
+        .collect();
+    let source = write_epub(&dir, "source.epub", &refs);
+    let original = std::fs::read(&source).expect("source");
+    let book = import_rich_book(&data_dir, &source);
+
+    let malformed = "<p>မြန်မာ <em>unclosed";
+    services::workspace::save_chapter_document(
+        &data_dir,
+        &book.chapter_ids[0],
+        Some(malformed.into()),
+        "draft",
+        0,
+    )
+    .expect("malformed HTML is kept in the draft");
+    let loaded =
+        services::workspace::get_chapter(&data_dir, &book.project_id, &book.chapter_ids[0])
+            .expect("reload");
+    assert_eq!(loaded.document.html.as_deref(), Some(malformed));
+
+    let destination = dir.join("malformed.epub");
+    let outcome = services::export::export_epub(
+        &data_dir,
+        ExportRequest {
+            project_id: book.project_id.clone(),
+            destination: destination.clone(),
+            mode: "draft".into(),
+            title: None,
+            language: None,
+            include_original: true,
+        },
+    )
+    .expect("export falls back instead of aborting");
+    assert!(
+        outcome
+            .warnings
+            .iter()
+            .any(|warning| warning.code == "chapter_translation_unusable"),
+        "{:?}",
+        outcome.warnings
+    );
+    let mut archive =
+        zip::ZipArchive::new(std::fs::File::open(&destination).expect("file")).expect("zip");
+    let mut output = String::new();
+    archive
+        .by_name("OEBPS/ch1.xhtml")
+        .expect("chapter")
+        .read_to_string(&mut output)
+        .expect("read");
+    assert!(output.contains("River <em>softly</em>."), "{output}");
+    assert!(!output.contains("unclosed"), "{output}");
+    epub::inspect(&destination).expect("reopen");
+
+    let invalid_image = "<p>Text<img src=\"data:image/png;base64,notbase64\" alt=\"Bad\"/></p>";
+    services::workspace::save_chapter_document(
+        &data_dir,
+        &book.chapter_ids[0],
+        Some(invalid_image.into()),
+        "draft",
+        1,
+    )
+    .expect("invalid image data is kept in the draft");
+    let destination = dir.join("invalid-image.epub");
+    let outcome = services::export::export_epub(
+        &data_dir,
+        ExportRequest {
+            project_id: book.project_id,
+            destination: destination.clone(),
+            mode: "draft".into(),
+            title: None,
+            language: None,
+            include_original: true,
+        },
+    )
+    .expect("invalid image falls back instead of aborting");
+    assert!(
+        outcome
+            .warnings
+            .iter()
+            .any(|warning| warning.code == "chapter_translation_unusable"),
+        "{:?}",
+        outcome.warnings
+    );
+    epub::inspect(&destination).expect("reopen invalid-image fallback");
+    assert_eq!(std::fs::read(&source).expect("unchanged source"), original);
+}
+
+#[test]
 fn authored_tables_save_reload_export_and_reopen() {
     let dir = tempdir();
     let data_dir = tempdir();

@@ -1,7 +1,8 @@
 import { listen } from "@tauri-apps/api/event";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "../../components/Icon";
 import { StatusNotice } from "../../components/StatusNotice";
+import { formatDuration } from "../../lib/duration";
 import { useTranslation } from "../../lib/i18n";
 import {
   cancelAiTranslation,
@@ -17,6 +18,7 @@ import type {
 } from "../../types/ai";
 import { agentLabel } from "../settings/TranslationModelSection";
 import { ApiRequestDetails } from "./ApiRequestDetails";
+import { sanitizePreviewHtml } from "./richText";
 
 type Phase = "idle" | "running" | "fixed" | "failed";
 
@@ -268,6 +270,7 @@ export function AiFixHtmlDialog({
   }, []);
 
   const running = phase === "running";
+  const safeFixed = useMemo(() => (fixed ? sanitizePreviewHtml(fixed) : ""), [fixed]);
 
   return (
     <div className="dialog-backdrop">
@@ -375,14 +378,14 @@ export function AiFixHtmlDialog({
             {running ? (
               <StatusNotice kind="loading">
                 {t("Repairing… (")}
-                {elapsed}
-                {t("s elapsed — this can take up to 30 minutes)")}
+                {formatDuration(elapsed)}
+                {t("elapsed — this can take up to 30 minutes)")}
               </StatusNotice>
             ) : null}
             {running && stalledSecs >= STALL_WARNING_AFTER_SECS ? (
               <StatusNotice kind="info">
-                {t("No answer text for")} {stalledSecs}
-                {t("s. Your draft is safe. You can wait or Cancel.")}
+                {t("No answer text for")} {formatDuration(stalledSecs)}
+                {t(". Your draft is safe. You can wait or Cancel.")}
                 {selection.agent.startsWith("custom:")
                   ? " Open API request details below to check the response and reasoning activity."
                   : " The tool has not returned more answer text yet."}
@@ -409,9 +412,10 @@ export function AiFixHtmlDialog({
               <section aria-label={t("Fixed HTML preview")}>
                 <div
                   className="ai-proposal"
-                  // The backend validates the fix against the chapter schema.
-                  // biome-ignore lint/security/noDangerouslySetInnerHtml: allowlisted server-validated fragment
-                  dangerouslySetInnerHTML={{ __html: fixed }}
+                  // Tool output may contain unsupported or malformed HTML.
+                  // Preview is scrubbed; Apply inserts the raw fixed result.
+                  // biome-ignore lint/security/noDangerouslySetInnerHtml: sanitized preview-only fragment
+                  dangerouslySetInnerHTML={{ __html: safeFixed }}
                 />
                 <div className="button-row">
                   <button

@@ -1,5 +1,77 @@
 # Plan.md — EPUB Translation Studio
 
+### AI translation can continue in the background — 2026-10-20
+
+Whole-chapter and selected-paragraph AI runs no longer stop when their dialog
+closes. The dialog offers "Continue in background"; closing it (X button,
+Escape, chapter switch) also keeps the run alive instead of cancelling it, so
+switching chapters or reading the source while a translation runs no longer
+throws the work away. Only the explicit Cancel action stops a run.
+
+An app-level job tracker (`features/translator/aiJobs.tsx`) mirrors the Rust
+worker through the existing `ai-translation-event` and `ai-selection-event`
+streams, and a status bar below the workspace toolbar lists every background
+run with its chapter, mode, elapsed time, and Cancel / Open / Dismiss actions.
+The translation header button spins while a run works on the current chapter.
+Reopening the AI dialog for a chapter re-attaches to its running job and shows
+a finished proposal that is still waiting for review; a background whole-chapter
+result fills an empty draft exactly like a foreground run, and a draft with
+content keeps the proposal for an explicit Insert.
+
+No Rust change was needed: the worker already runs on its own thread and
+reports through app-level events. Selected-paragraph runs keep their saved
+checkpoints, so they also survive an app restart; a whole-chapter proposal is
+held in memory and is lost if the app quits before the run finishes.
+
+Run times are shown as a readable duration instead of a bare second count:
+`42s`, then `5m 30s`, then `1h 5m 30s`. One shared formatter
+(`lib/duration.ts`) is used by the background status bar, the translation
+dialog and the HTML-repair dialog, and the surrounding sentence fragments in
+the Burmese, Mon, Arakanese and Shan catalogs were updated so the unit is
+never stated twice.
+
+Verification: `bun run check` passed (Biome and production build; the existing
+bundle-size warning remains) and the frontend suite passed (96 tests, 856
+assertions), including new background regressions for both modes and unit
+coverage for the duration format. Two existing selection tests were updated
+because closing a dialog no longer cancels its run. Native window behavior
+(minimizing the app during a run), live provider runs, light/dark rendering
+and Windows/Linux were not verified. Next unfinished task: exercise a
+background run in rebuilt native Sagar and confirm the proposal reaches the
+draft after the dialog was closed.
+
+### Whole-chapter AI output kept for any completed response — 2026-10-20
+
+Whole-chapter AI translation no longer discards a completed provider response
+because Rich text or strict XHTML validation cannot represent it. A new
+permissive `accept_document` path canonicalizes supported HTML and otherwise
+stores the returned markup unchanged, including malformed nesting, unsupported
+elements such as `font`, and empty links (`<a href="">`). Draft saves and whole-
+chapter AI proposals both use this path; structural skeleton differences are no
+longer a completion failure. Empty results, oversized responses, and active
+content (scripts, embedded elements, event handlers, `javascript:`/`vbscript:`,
+non-image `data:` URLs, active CSS, `srcdoc`) are still rejected, so only genuine
+HTTP/network/provider or active-content errors leave the draft untouched.
+Non-empty drafts are never silently replaced; the AI dialog keeps its preview
+and explicit Insert action.
+
+Export now degrades per chapter instead of aborting the book. If a translated
+chapter cannot be spliced, or any of its images cannot be packaged, that chapter
+keeps its original text and export returns a `chapter_translation_unusable`
+warning; the saved draft remains intact. AI proposal and Fix HTML previews are
+scrubbed in the frontend (scripts, embedded contexts, event/URL attributes,
+network fetches and active CSS) while Apply still inserts the raw tool result.
+
+Validation: `cargo fmt --check` and the full Rust suite passed (256 passed,
+5 existing ignored), including new save/reload/export regressions for unsupported
+HTML, empty links, malformed markup and invalid images. `bun run check` passed
+(Biome and production build; existing bundle-size warning remains) and the
+frontend suite passed (90 tests, 828 assertions). No milestone checkboxes
+advanced. Native insertion/reload/export, IME input, light/dark rendering and
+Windows/Linux behavior were not verified. Selected-paragraph AI append still uses
+its stricter duplicate-ID check and was not changed. Next unfinished task: exercise
+whole-chapter AI insertion, reload and export in rebuilt native Sagar.
+
 ### Highlighted code Windows line endings — 2026-10-16
 
 Corrected the highlighted-code round-trip test to expect XML-normalized LF

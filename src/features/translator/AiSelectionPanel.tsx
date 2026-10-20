@@ -30,25 +30,33 @@ import {
   stepForRun,
   type WorkflowStep,
 } from "./AiSelectionViews";
+import { useAiJobs } from "./aiJobs";
 
 export function AiSelectionPanel({
   chapterId,
+  chapterTitle,
+  projectId,
   selection,
   bookInstructions,
   currentInstructions,
   onInstructions,
   editor,
   onBusy,
+  onBackground,
 }: {
   chapterId: string;
+  chapterTitle: string;
+  projectId: string;
   selection: TranslationSelection | null;
   bookInstructions: string;
   currentInstructions: string;
   onInstructions: (value: string) => void;
   editor: ReturnType<typeof useChapterEditor>;
   onBusy: (busy: boolean) => void;
+  onBackground: () => void;
 }) {
   const { t } = useTranslation();
+  const { trackSelectionJob, setForeground } = useAiJobs();
   const [step, setStep] = useState<WorkflowStep>("select");
   const observedRun = useRef("");
   const bodyRef = useRef<HTMLDivElement>(null);
@@ -159,10 +167,14 @@ export function AiSelectionPanel({
     return () => {
       mounted.current = false;
       unlisten?.();
-      if (activeRun.current)
-        void controlAiSelectionRun(activeRun.current, "cancel", false).catch(() => {});
+      if (currentJob.current) {
+        // The run keeps working in the background: closing the dialog never
+        // throws away completed work or a running queue.
+        setForeground(currentJob.current, false);
+        currentJob.current = null;
+      }
     };
-  }, [chapterId, reload]);
+  }, [chapterId, reload, setForeground]);
 
   useEffect(() => {
     onBusy(running || editor.appending);
@@ -204,9 +216,20 @@ export function AiSelectionPanel({
       activeRun.current = id;
       setRunId(id);
       setPreviewPage(0);
-      currentJob.current = await controlAiSelectionRun(id, "start", consent);
+      const job = await controlAiSelectionRun(id, "start", consent);
+      currentJob.current = job;
+      trackSelectionJob({
+        jobId: job,
+        runId: id,
+        projectId,
+        chapterId,
+        chapterTitle,
+        mode: `${selected.size} ${t("selected items")}`,
+        foreground: mounted.current,
+      });
       if (!mounted.current) {
-        void controlAiSelectionRun(id, "cancel", false).catch(() => {});
+        // The dialog closed while the run was starting: it keeps working in
+        // the background and the status bar follows it.
         return;
       }
       starting.current = false;
@@ -238,12 +261,23 @@ export function AiSelectionPanel({
     activeRun.current = runId;
     try {
       const job = await controlAiSelectionRun(runId, action, consent);
+      if (action !== "cancel") {
+        currentJob.current = job;
+        trackSelectionJob({
+          jobId: job,
+          runId,
+          projectId,
+          chapterId,
+          chapterTitle,
+          mode: `${run?.items.length ?? selected.size} ${t("selected items")}`,
+          foreground: mounted.current,
+        });
+      }
       if (!mounted.current) {
-        if (action !== "cancel")
-          void controlAiSelectionRun(runId, "cancel", false).catch(() => {});
+        // The dialog closed while the run was starting: it keeps working in
+        // the background and the status bar follows it.
         return;
       }
-      if (action !== "cancel") currentJob.current = job;
       starting.current = false;
       for (const event of bufferedEvents.current) receiveEvent.current(event);
       bufferedEvents.current = [];
@@ -1001,14 +1035,20 @@ export function AiSelectionPanel({
             </button>
           ) : step === "progress" ? (
             running ? (
-              <button
-                type="button"
-                className="btn"
-                onClick={() => void control("cancel")}
-              >
-                <Icon name="close" />
-                {t("Cancel translation")}
-              </button>
+              <>
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={() => void control("cancel")}
+                >
+                  <Icon name="close" />
+                  {t("Cancel translation")}
+                </button>
+                <button type="button" className="btn" onClick={onBackground}>
+                  <Icon name="minimize" />
+                  {t("Continue in background")}
+                </button>
+              </>
             ) : (
               <button
                 type="button"

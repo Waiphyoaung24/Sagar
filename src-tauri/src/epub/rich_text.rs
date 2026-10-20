@@ -59,6 +59,379 @@ pub fn validate_document(fragment: &str) -> Result<(String, String), AppError> {
     validate_schema(fragment, true)
 }
 
+/// Accepts chapter HTML for storage or a translation proposal.
+///
+/// Supported markup is canonicalized by the strict editor validator. Anything
+/// else — unsupported elements or attributes, invalid nesting, empty links or
+/// even malformed markup — is preserved exactly as written so a successful
+/// translation is never lost to a formatting restriction. Active content
+/// (scripts, event handlers and script URLs) stays rejected: drafts, previews
+/// and exports must not carry executable markup.
+pub fn accept_document(fragment: &str) -> Result<(String, String), AppError> {
+    if fragment.len() > MAX_FRAGMENT {
+        return Err(invalid_detail("The chapter is too large.".to_string()));
+    }
+    match validate_document(fragment) {
+        Ok(validated) => Ok(validated),
+        Err(_) => {
+            reject_active_content(fragment)?;
+            Ok((fragment.to_string(), best_effort_plain_text(fragment)))
+        }
+    }
+}
+
+fn reject_active_content(fragment: &str) -> Result<(), AppError> {
+    let active = |detail: &str| {
+        Err(AppError::new(
+            "invalid_translation",
+            format!(
+                "The translation contains active content ({detail}). Remove scripts, event handlers and script links before saving."
+            ),
+        ))
+    };
+    let mut cursor = 0;
+    while let Some(offset) = fragment[cursor..].find('<') {
+        let start = cursor + offset;
+        let rest = &fragment[start..];
+        if rest.starts_with("<!--") {
+            cursor = rest
+                .find("-->")
+                .map(|end| start + end + 3)
+                .unwrap_or(fragment.len());
+            continue;
+        }
+        if rest.starts_with("<![CDATA[") {
+            cursor = rest
+                .find("]]>")
+                .map(|end| start + end + 3)
+                .unwrap_or(fragment.len());
+            continue;
+        }
+        if rest.starts_with("<?") {
+            cursor = rest
+                .find("?>")
+                .map(|end| start + end + 2)
+                .unwrap_or(fragment.len());
+            continue;
+        }
+        let Some(end) = find_tag_end(fragment, start + 1) else {
+            let lower = rest.to_ascii_lowercase();
+            if ["<script", "<iframe", "<object", "<embed", "<applet"]
+                .iter()
+                .any(|prefix| lower.starts_with(prefix))
+            {
+                return active("an unclosed active element");
+            }
+            break;
+        };
+        let body = fragment[start + 1..end].trim();
+        if body.is_empty() || body.starts_with('!') || body.starts_with('?') {
+            cursor = end + 1;
+            continue;
+        }
+        let body = body.strip_prefix('/').unwrap_or(body).trim_start();
+        let (name, attributes) = split_tag(body);
+        if name.is_empty() {
+            cursor = end + 1;
+            continue;
+        }
+        if name == "script" {
+            return active("a <script> element");
+        }
+        if matches!(
+            name.as_str(),
+            "iframe" | "frame" | "frameset" | "object" | "embed" | "applet"
+        ) {
+            return active(&format!("an embedded <{name}> element"));
+        }
+        for (attribute, value) in raw_attributes(attributes) {
+            if attribute.len() > 2 && attribute.starts_with("on") {
+                return active(&format!("the {attribute} event attribute"));
+            }
+            if attribute == "srcdoc" {
+                return active("a srcdoc attribute");
+            }
+            if is_url_attribute(&attribute)
+                && is_active_url(&value, attribute == "src" || attribute == "xlink:href")
+            {
+                return active(&format!("the {attribute} URL"));
+            }
+            if attribute == "style"
+                && is_active_style_value(
+                    decode_active_entities(&value)
+                        .trim()
+                        .to_ascii_lowercase()
+                        .as_str(),
+                )
+            {
+                return active("an inline CSS URL or script");
+            }
+        }
+        cursor = end + 1;
+    }
+    Ok(())
+}
+
+fn find_tag_end(text: &str, from: usize) -> Option<usize> {
+    let bytes = text.as_bytes();
+    let mut quote = None;
+    let mut index = from;
+    while index < bytes.len() {
+        match bytes[index] {
+            b'"' | b'\'' if quote.is_none() => quote = Some(bytes[index]),
+            byte if Some(byte) == quote => quote = None,
+            b'>' if quote.is_none() => return Some(index),
+            _ => {}
+        }
+        index += 1;
+    }
+    None
+}
+
+/// Splits a raw start/end tag body into its lower-case name and the remaining
+/// attribute text. This only runs on the permissive storage path, never as a
+/// substitute for namespace-aware XML parsing.
+fn split_tag(body: &str) -> (String, &str) {
+    let end = body
+        .char_indices()
+        .find(|(_, character)| character.is_whitespace() || *character == '/')
+        .map(|(index, _)| index)
+        .unwrap_or(body.len());
+    (body[..end].to_ascii_lowercase(), &body[end..])
+}
+
+/// Tolerant attribute scanner for malformed HTML. It reads quoted and
+/// unquoted values well enough to inspect URLs and event handlers; it never
+/// decides structure or serialization.
+fn raw_attributes(input: &str) -> Vec<(String, String)> {
+    let bytes = input.as_bytes();
+    let mut attributes = Vec::new();
+    let mut index = 0;
+    while index < bytes.len() {
+        while index < bytes.len() && (bytes[index].is_ascii_whitespace() || bytes[index] == b'/') {
+            index += 1;
+        }
+        if index >= bytes.len() {
+            break;
+        }
+        let name_start = index;
+        while index < bytes.len()
+            && !bytes[index].is_ascii_whitespace()
+            && bytes[index] != b'='
+            && bytes[index] != b'/'
+        {
+            index += 1;
+        }
+        let name = input[name_start..index].to_ascii_lowercase();
+        while index < bytes.len() && bytes[index].is_ascii_whitespace() {
+            index += 1;
+        }
+        let mut value = String::new();
+        if index < bytes.len() && bytes[index] == b'=' {
+            index += 1;
+            while index < bytes.len() && bytes[index].is_ascii_whitespace() {
+                index += 1;
+            }
+            if index < bytes.len() && (bytes[index] == b'"' || bytes[index] == b'\'') {
+                let quote = bytes[index];
+                index += 1;
+                let value_start = index;
+                while index < bytes.len() && bytes[index] != quote {
+                    index += 1;
+                }
+                value = input[value_start..index].to_string();
+                if index < bytes.len() {
+                    index += 1;
+                }
+            } else {
+                let value_start = index;
+                while index < bytes.len()
+                    && !bytes[index].is_ascii_whitespace()
+                    && bytes[index] != b'/'
+                {
+                    index += 1;
+                }
+                value = input[value_start..index].to_string();
+            }
+        }
+        if !name.is_empty() {
+            attributes.push((name, value));
+        }
+    }
+    attributes
+}
+
+fn is_url_attribute(name: &str) -> bool {
+    matches!(
+        name,
+        "href" | "src" | "xlink:href" | "action" | "formaction" | "poster" | "data"
+    )
+}
+
+fn is_active_url(value: &str, allow_image_data: bool) -> bool {
+    // Browsers decode character references before reading a scheme, and
+    // ignore embedded whitespace/control characters inside it.
+    let decoded = decode_active_entities(value);
+    let normalized: String = decoded
+        .chars()
+        .filter(|character| !character.is_ascii_control() && !character.is_ascii_whitespace())
+        .collect::<String>()
+        .to_ascii_lowercase();
+    if normalized.starts_with("javascript:") || normalized.starts_with("vbscript:") {
+        return true;
+    }
+    normalized.starts_with("data:") && !(allow_image_data && normalized.starts_with("data:image/"))
+}
+
+/// Decodes the character references that can hide an active URL scheme.
+/// Ordinary text entities do not matter here; a failed decode keeps `&`.
+fn decode_active_entities(text: &str) -> String {
+    let mut output = String::with_capacity(text.len());
+    let mut rest = text;
+    while let Some(index) = rest.find('&') {
+        output.push_str(&rest[..index]);
+        let candidate = &rest[index..];
+        let entity = candidate
+            .find(';')
+            .filter(|end| *end <= 12)
+            .map(|end| (end, &candidate[1..end]));
+        let replacement = entity.and_then(|(_, entity)| {
+            if let Some(hex) = entity
+                .strip_prefix("#x")
+                .or_else(|| entity.strip_prefix("#X"))
+            {
+                u32::from_str_radix(hex, 16).ok().and_then(char::from_u32)
+            } else if let Some(decimal) = entity.strip_prefix('#') {
+                decimal.parse::<u32>().ok().and_then(char::from_u32)
+            } else {
+                match entity.to_ascii_lowercase().as_str() {
+                    "colon" => Some(':'),
+                    "tab" => Some('\t'),
+                    "newline" => Some('\n'),
+                    "nbsp" => Some(' '),
+                    "sol" => Some('/'),
+                    "period" => Some('.'),
+                    _ => None,
+                }
+            }
+        });
+        match (entity, replacement) {
+            (Some((end, _)), Some(character)) => {
+                output.push(character);
+                rest = &candidate[end + 1..];
+            }
+            _ => {
+                output.push('&');
+                rest = &rest[index + 1..];
+            }
+        }
+    }
+    output.push_str(rest);
+    output
+}
+
+/// Best-effort readable text for markup the strict validator cannot parse.
+/// Used only to decide whether a draft has content and how progress is shown.
+fn best_effort_plain_text(fragment: &str) -> String {
+    let wrapped = format!(
+        "<w xmlns=\"{XHTML_NS}\" xmlns:epub=\"{EPUB_NS}\" xmlns:xlink=\"{XLINK_NS}\">{fragment}</w>"
+    );
+    if let Ok(doc) = roxmltree::Document::parse(&wrapped) {
+        let mut plain = String::new();
+        collect_plain_text(doc.root_element(), &mut plain);
+        if !plain.trim().is_empty() {
+            return plain;
+        }
+    }
+    let stripped = strip_markup_text(fragment);
+    let lower = fragment.to_ascii_lowercase();
+    if stripped.trim().is_empty()
+        && ["<img", "<image", "<svg", "<table"]
+            .iter()
+            .any(|needle| lower.contains(needle))
+    {
+        return "[content]".to_string();
+    }
+    stripped
+}
+
+fn collect_plain_text(node: roxmltree::Node<'_, '_>, plain: &mut String) {
+    for child in node.children() {
+        if child.is_text() {
+            plain.push_str(child.text().unwrap_or(""));
+        } else if child.is_element() {
+            match child.tag_name().name() {
+                "br" => plain.push('\n'),
+                "img" | "image" => plain.push_str("[image]"),
+                "table" => plain.push_str("[table]"),
+                _ => {}
+            }
+            collect_plain_text(child, plain);
+        }
+    }
+}
+
+fn strip_markup_text(fragment: &str) -> String {
+    let mut plain = String::new();
+    let mut cursor = 0;
+    while let Some(offset) = fragment[cursor..].find('<') {
+        let start = cursor + offset;
+        plain.push_str(&fragment[cursor..start]);
+        let rest = &fragment[start..];
+        if rest.starts_with("<!--") {
+            cursor = rest
+                .find("-->")
+                .map(|end| start + end + 3)
+                .unwrap_or(fragment.len());
+            continue;
+        }
+        if rest.starts_with("<![CDATA[") {
+            let content_start = start + "<![CDATA[".len();
+            if let Some(end) = rest.find("]]>") {
+                plain.push_str(&fragment[content_start..start + end]);
+                cursor = start + end + 3;
+                continue;
+            }
+            plain.push_str(&fragment[content_start..]);
+            break;
+        }
+        if rest.starts_with("<?") {
+            cursor = rest
+                .find("?>")
+                .map(|end| start + end + 2)
+                .unwrap_or(fragment.len());
+            continue;
+        }
+        let Some(end) = find_tag_end(fragment, start + 1) else {
+            plain.push_str(&fragment[start..]);
+            break;
+        };
+        let body = fragment[start + 1..end].trim();
+        let body = body.strip_prefix('/').unwrap_or(body).trim_start();
+        let (name, _) = split_tag(body);
+        if !body.starts_with('!') && !body.starts_with('?') {
+            match name.as_str() {
+                "br" => plain.push('\n'),
+                "img" | "image" => plain.push_str("[image]"),
+                "table" => plain.push_str("[table]"),
+                _ => {}
+            }
+        }
+        cursor = end + 1;
+    }
+    plain.push_str(&fragment[cursor..]);
+    decode_basic_entities(&plain)
+}
+
+fn decode_basic_entities(text: &str) -> String {
+    text.replace("&nbsp;", " ")
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&quot;", "\"")
+        .replace("&apos;", "'")
+        .replace("&amp;", "&")
+}
+
 const XHTML_NS: &str = "http://www.w3.org/1999/xhtml";
 const SVG_NS: &str = "http://www.w3.org/2000/svg";
 const XLINK_NS: &str = "http://www.w3.org/1999/xlink";
@@ -764,9 +1137,12 @@ fn validate_schema(fragment: &str, document: bool) -> Result<(String, String), A
                 // travel. Preserved outbound http(s)/mailto links are kept so
                 // a correctly-translated proposal is not rejected; preview
                 // keeps them inert and export carries the original reference.
-                // Anything else with a scheme or absolute path stays rejected.
+                // Empty hrefs are common in converted EPUBs and stay usable as
+                // plain text, so they are preserved too. Anything else with a
+                // scheme or absolute path stays rejected.
                 let value = attr.value();
-                if !is_relative_resource(value)
+                if !value.trim().is_empty()
+                    && !is_relative_resource(value)
                     && !(value.starts_with('#') && !value.contains(':'))
                     && !(document && is_safe_external_link(value))
                 {
@@ -1251,6 +1627,63 @@ mod original_cover_tests {
             "<p><svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 1 1\"></svg></p>",
         ] {
             assert!(validate_document(html).is_err(), "{html}");
+        }
+    }
+}
+
+#[cfg(test)]
+mod acceptance_tests {
+    use super::*;
+
+    #[test]
+    fn empty_anchor_href_round_trips_in_the_strict_editor() {
+        let html = "<p><a href=\"\">လင့်</a> and <a href=\"  \">space</a></p>";
+        let (saved, text) = validate_document(html).expect("empty href is usable");
+        assert_eq!(saved, html);
+        assert!(text.contains("လင့်"));
+    }
+
+    #[test]
+    fn unsupported_but_well_formed_markup_is_preserved() {
+        let html =
+            "<p><font color=\"red\">မြန်မာ</font><a href=\"\">link</a></p><center>old</center>";
+        let (accepted, plain) = accept_document(html).expect("permissive acceptance");
+        assert_eq!(accepted, html);
+        assert!(plain.contains("မြန်မာ"));
+        assert!(
+            validate_document(html).is_err(),
+            "still unsupported in Rich"
+        );
+    }
+
+    #[test]
+    fn malformed_markup_is_preserved_with_readable_text() {
+        let html = "<p>Unclosed <em>မြန်မာ &amp; text";
+        let (accepted, plain) = accept_document(html).expect("malformed accepted");
+        assert_eq!(accepted, html);
+        assert!(plain.contains("မြန်မာ & text"), "{plain}");
+        assert!(validate_document(html).is_err());
+    }
+
+    #[test]
+    fn permissive_plain_text_keeps_media_content_visible() {
+        let html = "<font><img src=\"images/a.png\" alt=\"A\"/></font>";
+        let (_, plain) = accept_document(html).expect("unsupported wrapper");
+        assert!(plain.contains("[image]"), "{plain}");
+    }
+
+    #[test]
+    fn active_content_is_still_rejected_in_permissive_mode() {
+        for html in [
+            "<script>bad()</script>",
+            "<p onclick=\"bad()\">text</p>",
+            "<a href=\"javascript:alert(1)\">text</a>",
+            "<font><a href=\"java&#x73;cript:alert(1)\">text</a></font>",
+            "<img src=\"data:text/html;base64,AAA\"/>",
+            "<iframe src=\"https://example.com\"></iframe>",
+            "<p style=\"background:url(https://example.com/a.png)\">text</p>",
+        ] {
+            assert!(accept_document(html).is_err(), "{html}");
         }
     }
 }

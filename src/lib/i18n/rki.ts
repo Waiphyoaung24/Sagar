@@ -382,10 +382,10 @@ export const rki: Record<string, string> = {
   "Live progress is unavailable. If a run never finishes, close and reopen this dialog — your draft is untouched.":
     "လက်ဟိတိုးတက်မှုကို ကြည့်မရပါ။ လုပ်ဆောင်မှု မပြီးကေ အေဝင်းဒိုးကို ပိတ်ပြီး ပြန်ဖွင့်ပါ။ ကိုယ့်မူကြမ်းကို မပြောင်းပါ။",
   "Translating… (": "ဘာသာပြန်နီရေ… (",
-  "s elapsed — this can take up to 30 minutes)": "စက္ကန့် ကြာနီပါရေ — မိနစ် ၃၀ အထိ ကြာနိုင်ပါရေ)",
+  "elapsed — this can take up to 30 minutes)": "ကြာနီပါရေ — မိနစ် ၃၀ အထိ ကြာနိုင်ပါရေ)",
   "No answer text for": "အဖြေစာသား မရသီးစွာ",
-  "s. Your draft is safe. You can wait or Cancel.":
-    "စက္ကန့် ကြာနီပါရေ။ မူကြမ်းကို လုံခြုံစွာ သိမ်းထားပါရေ။ စောင့်နိုင်ပါရေ၊ သို့မဟုတ် ပယ်ဖျက်နိုင်ပါရေ။",
+  ". Your draft is safe. You can wait or Cancel.":
+    "။ မူကြမ်းကို လုံခြုံစွာ သိမ်းထားပါရေ။ စောင့်နိုင်ပါရေ၊ သို့မဟုတ် ပယ်ဖျက်နိုင်ပါရေ။",
   "Live translation output": "လက်ဟိ ဘာသာပြန် ရလဒ်",
   "AI proposal preview": "AI အဆိုပြုချက် နမူနာ",
   "Your current draft has content. Inserting replaces it (kept as an unreviewed draft, never marked reviewed).":

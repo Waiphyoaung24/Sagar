@@ -6,6 +6,35 @@
 
 This file covers a deferred roadmap track. It does not authorize implementation or change the MVP scope.
 
+### Background AI runs — 2026-10-20
+
+Whole-chapter and selected-paragraph runs may now continue while the user
+works elsewhere. The AI dialog offers “Continue in background”, and closing
+the dialog (X, Escape, chapter switch) keeps the run alive instead of
+cancelling it; only the explicit Cancel action stops a run. An app-level job
+tracker mirrors the Rust worker through the existing `ai-translation-event` and
+`ai-selection-event` streams, and a status bar below the workspace toolbar
+lists each background run with chapter, mode, elapsed time and Cancel / Open /
+Dismiss actions. The translation header button spins while the current
+chapter has a running job. Reopening the dialog re-attaches to a running job
+and shows a finished proposal that still waits for review; a background
+whole-chapter result fills an empty draft exactly like a foreground run, while
+a draft with content keeps the proposal for an explicit Insert.
+
+No Rust change was required: the worker already runs on its own thread and
+reports through app-level events. Selected-paragraph runs keep their saved
+checkpoints and survive an app restart; a whole-chapter proposal lives in
+memory and is lost if the app quits before the run finishes. Two existing
+selection regressions were updated because closing a dialog no longer cancels
+its run. Frontend checks and the full frontend suite (96 tests) passed; native
+window behavior, live provider runs and cross-platform checks remain open.
+
+Run times read as a duration rather than a bare second count — `42s`, then
+`5m 30s`, then `1h 5m 30s` — through one shared formatter (`lib/duration.ts`)
+used by the background status bar, the translation dialog and the HTML-repair
+dialog. The Burmese, Mon, Arakanese and Shan catalogs were updated so the
+sentence fragments no longer state the unit next to the formatted duration.
+
 ### Whole-chapter and selected-content translation — 2026-10-15
 
 The explicitly requested selected-content workflow is implemented alongside the

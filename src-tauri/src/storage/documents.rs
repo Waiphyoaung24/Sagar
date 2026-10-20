@@ -92,7 +92,10 @@ pub(crate) fn save_in_transaction(
     if !matches!(status, "draft" | "reviewed" | "skipped") {
         return Err(AppError::new("invalid_status", "Invalid chapter status."));
     }
-    let (html, plain) = crate::epub::rich_text::validate_document(html.as_deref().unwrap_or(""))?;
+    // Chapter drafts keep unsupported, invalid or malformed HTML exactly as
+    // written so a successful translation is never lost to editor formatting
+    // limits. Active content is still rejected by the permissive validator.
+    let (html, plain) = crate::epub::rich_text::accept_document(html.as_deref().unwrap_or(""))?;
     let has_content = !plain.trim().is_empty();
     if status == "reviewed" && !has_content {
         return Err(AppError::new(

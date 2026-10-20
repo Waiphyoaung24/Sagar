@@ -10,6 +10,7 @@ import { validateChapterHtml } from "../../lib/tauri/commands";
 import type { ChapterContent } from "../../types/chapter";
 import { AiFixHtmlDialog } from "./AiFixHtmlDialog";
 import { AiGenerateDialog } from "./AiGenerateDialog";
+import { useAiJobs } from "./aiJobs";
 import { ChapterEditor } from "./ChapterEditor";
 import { comparableDocument, hasContent, normalizeRichDocument } from "./richText";
 import type { useChapterEditor } from "./useChapterEditor";
@@ -51,6 +52,9 @@ export function TargetPane({
   onReloadAfterConflict,
   editor,
   scrollRef,
+  aiOpen,
+  onOpenAi,
+  onCloseAi,
 }: {
   projectId: string;
   content: ChapterContent | null;
@@ -60,8 +64,12 @@ export function TargetPane({
   onReloadAfterConflict: () => void;
   editor: ReturnType<typeof useChapterEditor>;
   scrollRef?: RefObject<HTMLDivElement | null>;
+  aiOpen: boolean;
+  onOpenAi: () => void;
+  onCloseAi: () => void;
 }) {
   const { t } = useTranslation();
+  const { jobs, markInserted } = useAiJobs();
   // Scope readiness to the chapter instead of clearing it in a parent effect:
   // child mount effects can report readiness before that effect runs.
   const [readyEditor, setReadyEditor] = useState<{
@@ -78,7 +86,6 @@ export function TargetPane({
   const [, refreshToolbar] = useState(0);
   const [imageError, setImageError] = useState<string | null>(null);
   const [imagePicker, setImagePicker] = useState(false);
-  const [aiOpen, setAiOpen] = useState(false);
   const [fixConfirmOpen, setFixConfirmOpen] = useState(false);
   const [formattingOpen, setFormattingOpen] = useState(false);
   const [view, setView] = useState<"rich" | "html">("rich");
@@ -104,7 +111,6 @@ export function TargetPane({
     setImageError(null);
     setView("rich");
     setViewError(null);
-    setAiOpen(false);
     setFixConfirmOpen(false);
     setFormattingOpen(false);
   }, [content?.chapterId]);
@@ -113,6 +119,9 @@ export function TargetPane({
     !!activeEditor &&
     !activeEditor.isDestroyed &&
     activeEditor.isEditable;
+  const aiRunning = jobs.some(
+    (job) => job.chapterId === chapterId && job.state === "running" && !job.foreground,
+  );
   const showRichText = useCallback(async () => {
     if (!activeEditor || activeEditor.isDestroyed) {
       // The chapter editor is still mounting (or was destroyed on chapter
@@ -175,6 +184,27 @@ export function TargetPane({
     // through the same validation and preservation checks as HTML → Rich.
     void showRichText();
   }, [activeEditor, draftHtml, showRichText, view]);
+  // A translation that finished while the dialog was in the background fills
+  // an empty draft, exactly like a run that stayed in the foreground.
+  useEffect(() => {
+    if (!chapterId) return;
+    const job = jobs.find(
+      (entry) =>
+        entry.kind === "chapter" &&
+        entry.chapterId === chapterId &&
+        entry.state === "done" &&
+        entry.proposalHtml &&
+        !entry.inserted &&
+        !entry.foreground,
+    );
+    if (!job?.proposalHtml) return;
+    const draft = editor.draft;
+    if (!draft || draft.conflict) return;
+    if (hasContent(draft.html)) return;
+    editor.setHtml(job.proposalHtml);
+    markInserted(job.jobId);
+  }, [chapterId, editor.draft, editor.setHtml, jobs, markInserted]);
+
   const insertImage = (src: string, alt: string) => {
     if (canEdit) activeEditor.chain().focus().setImage({ src, alt }).run();
     setImagePicker(false);
@@ -231,11 +261,19 @@ export function TargetPane({
           type="button"
           className="icon-button"
           disabled={!editor.draft || editor.draft.conflict}
-          aria-label={t("Generate an AI translation proposal")}
-          title={t("Generate an AI translation proposal")}
-          onClick={() => setAiOpen(true)}
+          aria-label={
+            aiRunning
+              ? t("AI translation is running in the background")
+              : t("Generate an AI translation proposal")
+          }
+          title={
+            aiRunning
+              ? t("AI translation is running in the background")
+              : t("Generate an AI translation proposal")
+          }
+          onClick={onOpenAi}
         >
-          <Icon name="sparkles" />
+          <Icon name="sparkles" spin={aiRunning} />
         </button>
         {view === "rich" ? (
           <button
@@ -673,8 +711,9 @@ export function TargetPane({
         <AiGenerateDialog
           projectId={projectId}
           chapterId={content.chapterId}
+          chapterTitle={content.title}
           editor={editor}
-          onClose={() => setAiOpen(false)}
+          onClose={onCloseAi}
         />
       ) : null}
     </section>

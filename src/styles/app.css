@@ -434,6 +434,58 @@ button {
   color: var(--color-text);
 }
 
+/* AI runs that keep working while the user reads, writes or switches chapters */
+
+.ai-background {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-4);
+  border-bottom: var(--border-subtle);
+  background: var(--color-info-bg);
+}
+
+.ai-background__job {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: 34px;
+}
+
+.ai-background__icon {
+  display: inline-flex;
+  flex: none;
+  color: var(--color-accent);
+}
+
+.ai-background__text {
+  display: flex;
+  flex: 1;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-2);
+  min-width: 0;
+  font-size: var(--text-sm);
+  color: var(--color-text);
+}
+
+.ai-background__meta {
+  color: var(--color-text-muted);
+}
+
+.ai-background__job--done .ai-background__meta {
+  color: var(--color-success);
+}
+
+.ai-background__message {
+  color: var(--color-text-muted);
+  font-size: var(--text-xs);
+}
+
+.ai-background__job--failed .ai-background__message {
+  color: var(--color-error);
+}
+
 /* Chapter sidebar (mock) */
 
 .chapter-nav {

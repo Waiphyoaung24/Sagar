@@ -1,7 +1,8 @@
 import { listen } from "@tauri-apps/api/event";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "../../components/Icon";
 import { StatusNotice } from "../../components/StatusNotice";
+import { formatDuration } from "../../lib/duration";
 import { useTranslation } from "../../lib/i18n";
 import { formatDirection } from "../../lib/languages";
 import {
@@ -21,7 +22,8 @@ import type { ProjectSummary } from "../../types/project";
 import { agentLabel } from "../settings/TranslationModelSection";
 import { AiSelectionPanel } from "./AiSelectionPanel";
 import { ApiRequestDetails } from "./ApiRequestDetails";
-import { hasContent } from "./richText";
+import { useAiJobs } from "./aiJobs";
+import { hasContent, sanitizePreviewHtml } from "./richText";
 import type { useChapterEditor } from "./useChapterEditor";
 
 type Phase = "idle" | "running" | "proposal" | "failed";
@@ -44,15 +46,18 @@ function plainText(html: string): string {
 export function AiGenerateDialog({
   projectId,
   chapterId,
+  chapterTitle,
   editor,
   onClose,
 }: {
   projectId: string;
   chapterId: string;
+  chapterTitle: string;
   editor: ReturnType<typeof useChapterEditor>;
   onClose: () => void;
 }) {
   const { t } = useTranslation();
+  const { jobs, trackChapterJob, setForeground, markInserted } = useAiJobs();
   const [providers, setProviders] = useState<AiProviderList | null>(null);
   const [selection, setSelection] = useState<TranslationSelection | null>(null);
   const [project, setProject] = useState<ProjectSummary | null>(null);
@@ -76,6 +81,8 @@ export function AiGenerateDialog({
   appendPending.current = editor.appending ?? false;
   const lastOutputAt = useRef<number>(Date.now());
   const jobId = useRef<string | null>(null);
+  /** The run this dialog owns, even after it reached a terminal state. */
+  const ownedJobId = useRef<string | null>(null);
   const starting = useRef(false);
   const closed = useRef(false);
   const pendingEvents = useRef<AiTranslationEvent[]>([]);
@@ -88,6 +95,13 @@ export function AiGenerateDialog({
   editorRef.current = editor;
   const closeRef = useRef(onClose);
   closeRef.current = onClose;
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
 
   useEffect(() => {
     previousFocus.current = document.activeElement as HTMLElement | null;
@@ -100,14 +114,15 @@ export function AiGenerateDialog({
   const handleClose = useCallback(() => {
     if (appendPending.current) return;
     closed.current = true;
-    // Closing mid-run cancels the job; the draft is always untouched.
-    if (jobId.current) {
-      const running = jobId.current;
-      jobId.current = null;
-      void cancelAiTranslation(running).catch(() => {});
-    }
+    // Closing never destroys a run: an in-flight translation keeps working in
+    // the background until it finishes or the user cancels it.
     closeRef.current();
   }, []);
+
+  /** Leave the run working in the background and return to the workspace. */
+  const handleBackground = useCallback(() => {
+    handleClose();
+  }, [handleClose]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -184,8 +199,8 @@ export function AiGenerateDialog({
     };
   }, [projectId]);
 
-  // Own exactly one job: events for other chapters are ignored, and closing
-  // the dialog cancels the in-flight run.
+  // Own exactly one job: events for other chapters are ignored. Closing the
+  // dialog hands the run to the background instead of cancelling it.
   useEffect(() => {
     let unlisten: (() => void) | undefined;
     let disposed = false;
@@ -229,6 +244,7 @@ export function AiGenerateDialog({
           // Fresh chapters go straight into the Rich editor; anything with
           // content stays for explicit Insert confirmation below.
           current.setHtml(payload.proposalHtml);
+          markInserted(payload.jobId);
           closeRef.current();
           return;
         }
@@ -266,14 +282,16 @@ export function AiGenerateDialog({
       disposed = true;
       receiveEvent.current = () => {};
       unlisten?.();
-      if (jobId.current) {
-        const running = jobId.current;
-        jobId.current = null;
-        void cancelAiTranslation(running).catch(() => {});
+      if (ownedJobId.current) {
+        // The run continues in the background; the status bar keeps it visible
+        // and the finished proposal stays available for review.
+        setForeground(ownedJobId.current, false);
+        ownedJobId.current = null;
       }
+      jobId.current = null;
       setPhase("idle");
     };
-  }, [chapterId]);
+  }, [chapterId, markInserted, setForeground]);
 
   // Elapsed + stall tickers while a run is in flight; translation can take
   // up to 30 minutes, and slow connections can stall output for minutes.
@@ -291,6 +309,38 @@ export function AiGenerateDialog({
     }, 1000);
     return () => clearInterval(timer);
   }, [phase]);
+
+  // Re-open a run that is already working in the background for this chapter
+  // and pick up a finished proposal that is waiting for review.
+  useEffect(() => {
+    const active = jobs.find(
+      (job) =>
+        job.kind === "chapter" && job.chapterId === chapterId && job.state === "running",
+    );
+    if (active && !jobId.current && !starting.current) {
+      jobId.current = active.jobId;
+      ownedJobId.current = active.jobId;
+      setForeground(active.jobId, true);
+      setPhase("running");
+    }
+    const finished = jobs.find(
+      (job) =>
+        job.kind === "chapter" &&
+        job.chapterId === chapterId &&
+        job.state === "done" &&
+        job.proposalHtml &&
+        !job.inserted,
+    );
+    if (finished?.proposalHtml && phase !== "proposal" && !proposal) {
+      // The dialog owns the review now; the draft stays untouched until the
+      // user inserts the proposal.
+      setProposal(finished.proposalHtml);
+      setPhase("proposal");
+      setNotice(null);
+      ownedJobId.current = finished.jobId;
+      setForeground(finished.jobId, true);
+    }
+  }, [chapterId, jobs, phase, proposal, setForeground]);
 
   const handleGenerate = useCallback(async () => {
     if (!selection || !consent || jobId.current || starting.current) {
@@ -318,23 +368,44 @@ export function AiGenerateDialog({
         reasoningEffort: selection.reasoningEffort,
       });
       starting.current = false;
-      if (closed.current) {
-        void cancelAiTranslation(started.jobId).catch(() => {});
+      const detached = closed.current || !mounted.current;
+      trackChapterJob({
+        jobId: started.jobId,
+        projectId,
+        chapterId,
+        chapterTitle,
+        mode: t("Whole chapter"),
+        foreground: !detached,
+      });
+      if (detached) {
+        // The dialog closed while the run was starting: it keeps working in
+        // the background and reports through the status bar.
         return;
       }
       jobId.current = started.jobId;
+      ownedJobId.current = started.jobId;
       for (const event of pendingEvents.current) receiveEvent.current(event);
       pendingEvents.current = [];
     } catch (error) {
       starting.current = false;
       pendingEvents.current = [];
-      if (closed.current) return;
+      if (closed.current || !mounted.current) return;
       setPhase("failed");
       setNotice(
         error instanceof CommandError ? error.message : "The proposal could not start.",
       );
     }
-  }, [chapterId, consent, selection, streamed, currentInstructions]);
+  }, [
+    chapterId,
+    chapterTitle,
+    consent,
+    currentInstructions,
+    projectId,
+    selection,
+    streamed,
+    t,
+    trackChapterJob,
+  ]);
 
   const handleCancel = useCallback(() => {
     if (!jobId.current) {
@@ -355,9 +426,10 @@ export function AiGenerateDialog({
       return;
     }
     editor.setHtml(proposal);
+    if (ownedJobId.current) markInserted(ownedJobId.current);
     setConfirmInsert(false);
     onClose();
-  }, [confirmInsert, editor, onClose, proposal]);
+  }, [confirmInsert, editor, markInserted, onClose, proposal]);
 
   const handleCopy = useCallback(() => {
     if (!proposal) {
@@ -375,6 +447,10 @@ export function AiGenerateDialog({
   }, [proposal]);
 
   const running = phase === "running";
+  const safeProposal = useMemo(
+    () => (proposal ? sanitizePreviewHtml(proposal) : ""),
+    [proposal],
+  );
 
   return (
     <div className="dialog-backdrop">
@@ -399,14 +475,14 @@ export function AiGenerateDialog({
             className="icon-button"
             aria-label={
               !editor.appending && (running || selectedBusy)
-                ? "Cancel and close"
+                ? t("Close and keep translating in the background")
                 : t("Close")
             }
             title={
               editor.appending
                 ? "Wait for results to finish saving"
                 : running || selectedBusy
-                  ? "Cancel and close"
+                  ? t("Close and keep translating in the background")
                   : t("Close")
             }
             disabled={editor.appending}
@@ -462,12 +538,15 @@ export function AiGenerateDialog({
           <AiSelectionPanel
             key={chapterId}
             chapterId={chapterId}
+            chapterTitle={chapterTitle}
+            projectId={projectId}
             selection={selection}
             bookInstructions={bookInstructions}
             currentInstructions={currentInstructions}
             onInstructions={setCurrentInstructions}
             editor={editor}
             onBusy={setSelectedBusy}
+            onBackground={handleBackground}
           />
         ) : loadError ? (
           <StatusNotice kind="error">{loadError}</StatusNotice>
@@ -562,6 +641,10 @@ export function AiGenerateDialog({
                   <Icon name="close" />
                   {t("Cancel")}
                 </button>
+                <button type="button" className="btn" onClick={handleBackground}>
+                  <Icon name="minimize" />
+                  {t("Continue in background")}
+                </button>
               </div>
             ) : null}
 
@@ -575,14 +658,14 @@ export function AiGenerateDialog({
             {running ? (
               <StatusNotice kind="loading">
                 {t("Translating… (")}
-                {elapsed}
-                {t("s elapsed — this can take up to 30 minutes)")}
+                {formatDuration(elapsed)}
+                {t("elapsed — this can take up to 30 minutes)")}
               </StatusNotice>
             ) : null}
             {running && stalledSecs >= STALL_WARNING_AFTER_SECS ? (
               <StatusNotice kind="info">
-                {t("No answer text for")} {stalledSecs}
-                {t("s. Your draft is safe. You can wait or Cancel.")}
+                {t("No answer text for")} {formatDuration(stalledSecs)}
+                {t(". Your draft is safe. You can wait or Cancel.")}
                 {selection.agent.startsWith("custom:")
                   ? " Open API request details below to check the response and reasoning activity."
                   : " The tool has not returned more answer text yet."}
@@ -609,9 +692,10 @@ export function AiGenerateDialog({
               <section aria-label={t("AI proposal preview")}>
                 <div
                   className="ai-proposal"
-                  // The backend validates proposals against the chapter schema.
-                  // biome-ignore lint/security/noDangerouslySetInnerHtml: allowlisted server-validated fragment
-                  dangerouslySetInnerHTML={{ __html: proposal }}
+                  // Tool output may contain arbitrary or malformed HTML. The
+                  // raw result is saved only on Insert; preview is scrubbed.
+                  // biome-ignore lint/security/noDangerouslySetInnerHtml: sanitized preview-only fragment
+                  dangerouslySetInnerHTML={{ __html: safeProposal }}
                 />
                 <div className="button-row">
                   <button
