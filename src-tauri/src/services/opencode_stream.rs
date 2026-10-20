@@ -835,13 +835,14 @@ mod tests {
     fn http_adapter_preserves_selection_streams_and_cleans_up_on_all_outcomes() {
         use std::{
             io::{Read, Write},
-            net::TcpListener,
+            net::{TcpListener, TcpStream},
             os::unix::fs::PermissionsExt,
             sync::{Arc, Mutex},
         };
         for mode in ["success", "cancel", "timeout", "permission"] {
             let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-            let base = format!("http://{}", listener.local_addr().unwrap());
+            let addr = listener.local_addr().unwrap();
+            let base = format!("http://{addr}");
             let dir = tempfile::tempdir().unwrap();
             let binary = dir.path().join("opencode");
             std::fs::write(
@@ -894,6 +895,11 @@ mod tests {
                     } else {
                         serde_json::from_slice(&body).unwrap()
                     };
+                    // Test-only exit signal: a timeout run may end before its
+                    // own cleanup DELETE, and the mock must always terminate.
+                    if request == "GET /__teardown" {
+                        break;
+                    }
                     recorded.lock().unwrap().push((request.clone(), body));
                     if request == "GET /api/event" {
                         socket.write_all(b"HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nConnection: close\r\n\r\ndata: {\"type\":\"server.connected\"}\n\n").unwrap();
@@ -965,6 +971,26 @@ mod tests {
                     cancel.store(true, Ordering::SeqCst);
                 }
             });
+            // The mock must exit even when the run ends without its own
+            // cleanup DELETE (a timeout can expire during startup).
+            // Connecting fails once the mock already exited via the DELETE.
+            // A failed write means the same thing: the mock is already gone,
+            // so the error must not be raised here.
+            if let Ok(mut teardown) = TcpStream::connect(addr) {
+                let _ = teardown.write_all(
+                    b"GET /__teardown HTTP/1.1\r\nauthorization: basic dGVzdA==\r\ncontent-length: 0\r\n\r\n",
+                );
+            }
+            // Bound the wait: a mock that never terminates must fail the test
+            // loudly instead of hanging the whole suite.
+            let deadline = Instant::now() + Duration::from_secs(10);
+            while !mock_server.is_finished() {
+                assert!(
+                    Instant::now() < deadline,
+                    "the mock server did not terminate"
+                );
+                std::thread::sleep(Duration::from_millis(10));
+            }
             mock_server.join().unwrap();
             if mode == "success" {
                 assert_eq!(result.unwrap(), "<p>မြန်မာ</p>".as_bytes());
@@ -984,6 +1010,27 @@ mod tests {
                 );
             }
             let calls = calls.lock().unwrap();
+            // The timeout budget can expire anywhere in the run, including
+            // before the session or prompt are sent. Only modes whose
+            // expected outcome already required those requests — a streamed
+            // answer, a cancelled delta or a tool request — may assert on
+            // them; timeout mode may only require cleanup once a session
+            // exists, because startup may legitimately consume the budget.
+            if mode == "timeout" {
+                if calls.iter().any(|(path, _)| path == "POST /api/session") {
+                    assert!(
+                        calls
+                            .iter()
+                            .any(|(path, _)| path == "POST /api/session/ses_test/interrupt")
+                    );
+                    assert!(
+                        calls
+                            .iter()
+                            .any(|(path, _)| path == "DELETE /api/session/ses_test")
+                    );
+                }
+                continue;
+            }
             let create = &calls
                 .iter()
                 .find(|(path, _)| path == "POST /api/session")
